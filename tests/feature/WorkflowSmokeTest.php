@@ -297,6 +297,35 @@ final class WorkflowSmokeTest extends CIUnitTestCase
         $this->assertSame((int) $payroll['id'], (int) $delivery['payroll_id']);
     }
 
+    public function testAdminResetRiderPasswordGeneratesNonPredictableTemporaryPassword(): void
+    {
+        $db = db_connect();
+        $security = service('security');
+        $tokenName = $security->getTokenName();
+        $tokenHash = $security->generateHash();
+
+        $result = $this->withSession([
+            'isLoggedIn' => true,
+            'role' => 'admin',
+            'user_id' => 1,
+            'force_password_change' => false,
+            'username' => 'admin',
+        ])->post('/admin/riders/3/reset-password', [
+            $tokenName => $tokenHash,
+        ]);
+
+        $result->assertRedirect();
+        $result->assertRedirectTo(site_url('/admin/riders'));
+
+        $user = $db->table('users')->where('id', 2)->get()->getRowArray();
+
+        $this->assertNotNull($user);
+        $this->assertSame('r-1003', $user['username']);
+        $this->assertTrue((bool) $user['force_password_change']);
+        $this->assertFalse(password_verify('r-1003123', $user['password_hash']));
+        $this->assertFalse(password_verify('secret123', $user['password_hash']));
+    }
+
     private function resetSchema(): void
     {
         $db = db_connect();
@@ -545,3 +574,4 @@ final class WorkflowSmokeTest extends CIUnitTestCase
         ]);
     }
 }
+

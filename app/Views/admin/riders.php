@@ -47,7 +47,7 @@
                         <td>
                             <div class="d-flex gap-2 flex-wrap">
                                 <button class="btn btn-sm btn-outline-dark" data-bs-toggle="modal" data-bs-target="#editRiderModal<?= (int) $rider['id'] ?>">Edit</button>
-                                <form method="post" action="<?= site_url('/admin/riders/' . (int) $rider['id'] . '/reset-password') ?>" onsubmit="return confirm('Reset this rider password to the default format based on the rider code?');">
+                                <form method="post" action="<?= site_url('/admin/riders/' . (int) $rider['id'] . '/reset-password') ?>" onsubmit="return confirm('Generate a new temporary password for this rider?');">
                                     <?= csrf_field() ?>
                                     <button class="btn btn-sm btn-outline-warning">Reset Password</button>
                                 </form>
@@ -142,3 +142,4 @@
 <?php endforeach; ?>
 
 <?= $this->endSection() ?>
+

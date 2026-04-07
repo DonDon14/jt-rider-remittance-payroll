@@ -8,6 +8,9 @@ class AddUsersTable extends Migration
 {
     public function up()
     {
+        helper('credentials');
+        $bootstrapAdminPassword = trim((string) env('auth.bootstrapAdminPassword'));
+
         if (! $this->db->tableExists('users')) {
             $this->forge->addField([
                 'id' => [
@@ -57,9 +60,13 @@ class AddUsersTable extends Migration
 
         $adminExists = $this->db->table('users')->where('username', 'admin')->countAllResults();
         if ($adminExists === 0) {
+            if ($bootstrapAdminPassword === '') {
+                throw new \RuntimeException('Set auth.bootstrapAdminPassword in your environment before running migrations for a fresh install.');
+            }
+
             $this->db->table('users')->insert([
                 'username' => 'admin',
-                'password_hash' => password_hash('admin123', PASSWORD_DEFAULT),
+                'password_hash' => password_hash($bootstrapAdminPassword, PASSWORD_DEFAULT),
                 'role' => 'admin',
                 'created_at' => date('Y-m-d H:i:s'),
                 'updated_at' => date('Y-m-d H:i:s'),
@@ -71,9 +78,10 @@ class AddUsersTable extends Migration
             $username = strtolower((string) $rider['rider_code']);
             $exists = $this->db->table('users')->where('username', $username)->countAllResults();
             if ($exists === 0) {
+                $temporaryPassword = app_generate_temporary_password();
                 $this->db->table('users')->insert([
                     'username' => $username,
-                    'password_hash' => password_hash($username . '123', PASSWORD_DEFAULT),
+                    'password_hash' => password_hash($temporaryPassword, PASSWORD_DEFAULT),
                     'role' => 'rider',
                     'rider_id' => (int) $rider['id'],
                     'created_at' => date('Y-m-d H:i:s'),

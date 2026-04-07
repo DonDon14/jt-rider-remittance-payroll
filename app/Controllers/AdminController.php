@@ -560,6 +560,8 @@ class AdminController extends BaseController
 
     public function createRider()
     {
+        helper('credentials');
+
         $rules = [
             'rider_code' => 'required|min_length[3]|max_length[40]|is_unique[riders.rider_code]',
             'name' => 'required|min_length[3]|max_length[120]',
@@ -576,7 +578,7 @@ class AdminController extends BaseController
         $contactNumber = trim((string) $this->request->getPost('contact_number'));
         $commissionRate = (float) $this->request->getPost('commission_rate');
         $defaultUsername = strtolower($riderCode);
-        $defaultPassword = $defaultUsername . '123';
+        $temporaryPassword = app_generate_temporary_password();
         $userModel = new UserModel();
 
         if (db_connect()->tableExists('users') && $userModel->where('username', $defaultUsername)->first()) {
@@ -585,6 +587,7 @@ class AdminController extends BaseController
 
         $db = db_connect();
         $db->transStart();
+        $successMessage = 'Rider details updated.';
 
         $riderId = (new RiderModel())->insert([
             'rider_code' => $riderCode,
@@ -603,7 +606,7 @@ class AdminController extends BaseController
         if ($db->tableExists('users')) {
             $userModel->insert([
                 'username' => $defaultUsername,
-                'password_hash' => password_hash($defaultPassword, PASSWORD_DEFAULT),
+                'password_hash' => password_hash($temporaryPassword, PASSWORD_DEFAULT),
                 'role' => 'rider',
                 'rider_id' => (int) $riderId,
                 'is_active' => 1,
@@ -617,11 +620,13 @@ class AdminController extends BaseController
             return redirect()->back()->withInput()->with('error', 'Unable to create rider profile.');
         }
 
-        return redirect()->to('/admin/riders')->with('success', 'Rider profile created. Login: ' . $defaultUsername . ' / ' . $defaultPassword);
+        return redirect()->to('/admin/riders')->with('success', 'Rider profile created. Temporary login: ' . $defaultUsername . ' / ' . $temporaryPassword . '. The rider must change it after login.');
     }
 
     public function updateRider(int $id)
     {
+        helper('credentials');
+
         $riderModel = new RiderModel();
         $rider = $riderModel->find($id);
 
@@ -673,14 +678,16 @@ class AdminController extends BaseController
                     'is_active' => $isActive,
                 ]);
             } else {
+                $temporaryPassword = app_generate_temporary_password();
                 $userModel->insert([
                     'username' => $username,
-                    'password_hash' => password_hash($username . '123', PASSWORD_DEFAULT),
+                    'password_hash' => password_hash($temporaryPassword, PASSWORD_DEFAULT),
                     'role' => 'rider',
                     'rider_id' => $id,
                     'is_active' => $isActive,
                     'force_password_change' => 1,
                 ]);
+                $successMessage = 'Rider details updated. Temporary login: ' . $username . ' / ' . $temporaryPassword . '. The rider must change it after login.';
             }
         }
 
@@ -690,11 +697,13 @@ class AdminController extends BaseController
             return redirect()->back()->withInput()->with('error', 'Unable to update rider profile.');
         }
 
-        return redirect()->to('/admin/riders')->with('success', 'Rider details updated.');
+        return redirect()->to('/admin/riders')->with('success', $successMessage);
     }
 
     public function resetRiderPassword(int $id)
     {
+        helper('credentials');
+
         $rider = (new RiderModel())->find($id);
         if (! $rider) {
             return redirect()->to('/admin/riders')->with('error', 'Rider not found.');
@@ -703,7 +712,7 @@ class AdminController extends BaseController
         $userModel = new UserModel();
         $user = $userModel->where('rider_id', $id)->where('role', 'rider')->first();
         $username = strtolower((string) $rider['rider_code']);
-        $newPassword = $username . '123';
+        $newPassword = app_generate_temporary_password();
 
         if ($user) {
             $userModel->update((int) $user['id'], [
@@ -723,7 +732,7 @@ class AdminController extends BaseController
             ]);
         }
 
-        return redirect()->to('/admin/riders')->with('success', 'Rider password reset. Login: ' . $username . ' / ' . $newPassword);
+        return redirect()->to('/admin/riders')->with('success', 'Rider password reset. Temporary login: ' . $username . ' / ' . $newPassword . '. The rider must change it after login.');
     }
 
     public function storeAdjustment()
