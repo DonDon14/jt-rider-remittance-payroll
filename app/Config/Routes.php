@@ -33,6 +33,7 @@ $routes->group('admin', ['filter' => 'admin'], static function ($routes) {
     $routes->get('remittance/pdf/(:num)', 'AdminController::remittancePdf/$1');
     $routes->get('payroll/(:num)/pdf', 'AdminController::payrollPdf/$1');
     $routes->get('payroll/summary/pdf', 'AdminController::payrollSummaryPdf');
+    $routes->get('payroll/export/csv', 'AdminController::payrollCsv');
     $routes->get('history/export/csv', 'AdminController::deliveryHistoryCsv');
     $routes->get('corrections/export/csv', 'AdminController::correctionsCsv');
     $routes->get('adjustments/export/csv', 'AdminController::adjustmentsCsv');

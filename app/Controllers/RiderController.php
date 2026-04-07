@@ -121,6 +121,12 @@ class RiderController extends BaseController
             $latestAnnouncement = $announcements[0];
             if ((int) ($user['last_seen_announcement_id'] ?? 0) !== (int) $latestAnnouncement['id']) {
                 $latestAnnouncementPopup = $latestAnnouncement;
+                if (! empty($user['id'])) {
+                    (new UserModel())->update((int) $user['id'], [
+                        'last_seen_announcement_id' => (int) $latestAnnouncement['id'],
+                    ]);
+                    $user['last_seen_announcement_id'] = (int) $latestAnnouncement['id'];
+                }
             }
         }
 

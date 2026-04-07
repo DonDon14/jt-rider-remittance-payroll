@@ -359,8 +359,9 @@ class AdminController extends BaseController
         $selectedRiderId = trim((string) $this->request->getGet('rider_id'));
         $selectedPayrollMonth = trim((string) $this->request->getGet('payroll_month'));
         $selectedCutoff = trim((string) $this->request->getGet('cutoff_period'));
+        $selectedPayrollStatus = trim((string) $this->request->getGet('payroll_status'));
 
-        $payrollModel = $this->buildPayrollQuery($selectedRiderId, $selectedPayrollMonth, $selectedCutoff);
+        $payrollModel = $this->buildPayrollQuery($selectedRiderId, $selectedPayrollMonth, $selectedCutoff, $selectedPayrollStatus);
         $payrolls = $payrollModel->paginate(20, 'payrolls');
 
         $cutoffSummaries = (new PayrollModel())
@@ -383,10 +384,71 @@ class AdminController extends BaseController
                 'selectedRiderId' => $selectedRiderId,
                 'selectedPayrollMonth' => $selectedPayrollMonth,
                 'selectedCutoff' => $selectedCutoff,
+                'selectedPayrollStatus' => $selectedPayrollStatus,
                 'pager' => $payrollModel->pager,
                 'pageGroup' => 'payrolls',
             ]
         ));
+    }
+
+    public function payrollCsv()
+    {
+        $selectedRiderId = trim((string) $this->request->getGet('rider_id'));
+        $selectedPayrollMonth = trim((string) $this->request->getGet('payroll_month'));
+        $selectedCutoff = trim((string) $this->request->getGet('cutoff_period'));
+        $selectedPayrollStatus = trim((string) $this->request->getGet('payroll_status'));
+
+        $rows = $this->buildPayrollQuery($selectedRiderId, $selectedPayrollMonth, $selectedCutoff, $selectedPayrollStatus)
+            ->findAll();
+
+        $lines = [[
+            'Date Range',
+            'Rider Code',
+            'Rider Name',
+            'Status',
+            'Payout Method',
+            'Payout Reference',
+            'Released At',
+            'Received At',
+            'Gross Earnings',
+            'Bonus Total',
+            'Deduction Total',
+            'Shortage Deductions',
+            'Repayments',
+            'Net Pay',
+        ]];
+
+        foreach ($rows as $row) {
+            $lines[] = [
+                (string) ($row['start_date'] ?? $row['month_year']) . ' to ' . (string) ($row['end_date'] ?? $row['month_year']),
+                (string) ($row['rider_code'] ?? ''),
+                (string) ($row['name'] ?? ''),
+                (string) ($row['payroll_status'] ?? 'GENERATED'),
+                (string) ($row['payout_method'] ?? ''),
+                (string) ($row['payout_reference'] ?? ''),
+                (string) ($row['released_at'] ?? ''),
+                (string) ($row['received_at'] ?? ''),
+                number_format((float) ($row['gross_earnings'] ?? 0), 2, '.', ''),
+                number_format((float) ($row['bonus_total'] ?? 0), 2, '.', ''),
+                number_format((float) ($row['deduction_total'] ?? 0), 2, '.', ''),
+                number_format((float) ($row['shortage_deductions'] ?? 0), 2, '.', ''),
+                number_format((float) ($row['shortage_payments_received'] ?? 0), 2, '.', ''),
+                number_format((float) ($row['net_pay'] ?? 0), 2, '.', ''),
+            ];
+        }
+
+        $handle = fopen('php://temp', 'r+');
+        foreach ($lines as $line) {
+            fputcsv($handle, $line);
+        }
+        rewind($handle);
+        $csv = stream_get_contents($handle) ?: '';
+        fclose($handle);
+
+        return $this->response
+            ->setHeader('Content-Type', 'text/csv')
+            ->setHeader('Content-Disposition', 'attachment; filename="payroll-disbursement-export.csv"')
+            ->setBody($csv);
     }
 
     public function settings()
@@ -2039,7 +2101,7 @@ class AdminController extends BaseController
             ->orderBy('delivery_records.id', 'DESC');
     }
 
-    private function buildPayrollQuery(string $selectedRiderId, string $selectedPayrollMonth, string $selectedCutoff): PayrollModel
+    private function buildPayrollQuery(string $selectedRiderId, string $selectedPayrollMonth, string $selectedCutoff, string $selectedPayrollStatus = ''): PayrollModel
     {
         $builder = (new PayrollModel())
             ->select('payrolls.*, riders.name, riders.rider_code')
@@ -2060,6 +2122,10 @@ class AdminController extends BaseController
             $builder
                 ->where('payrolls.start_date >=', $selectedPayrollMonth . '-01')
                 ->where('payrolls.start_date <=', date('Y-m-t', strtotime($selectedPayrollMonth . '-01')));
+        }
+
+        if (in_array($selectedPayrollStatus, ['GENERATED', 'RELEASED', 'RECEIVED'], true)) {
+            $builder->where('payrolls.payroll_status', $selectedPayrollStatus);
         }
 
         return $builder;

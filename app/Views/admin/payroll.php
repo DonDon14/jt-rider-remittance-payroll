@@ -56,7 +56,7 @@
     <div class="card-header fw-semibold">Filter Payroll History</div>
     <div class="card-body">
         <form method="get" class="row g-2 align-items-end">
-            <div class="col-md-4">
+            <div class="col-md-3">
                 <label class="form-label">Rider</label>
                 <div class="searchable-select" data-searchable-select>
                     <input type="text" class="form-control mb-2" placeholder="Search rider code or name" data-search-target>
@@ -68,11 +68,11 @@
                     </select>
                 </div>
             </div>
-            <div class="col-md-3">
+            <div class="col-md-2">
                 <label class="form-label">Payroll Month</label>
                 <input type="month" name="payroll_month" class="form-control" value="<?= esc($selectedPayrollMonth) ?>">
             </div>
-            <div class="col-md-3">
+            <div class="col-md-2">
                 <label class="form-label">Cutoff Period</label>
                 <select name="cutoff_period" class="form-select">
                     <option value="">All cutoff periods</option>
@@ -80,9 +80,26 @@
                     <option value="SECOND" <?= $selectedCutoff === 'SECOND' ? 'selected' : '' ?>>16 to Month-End</option>
                 </select>
             </div>
-            <div class="col-md-2 d-grid gap-2">
+            <div class="col-md-2">
+                <label class="form-label">Payout Status</label>
+                <select name="payroll_status" class="form-select">
+                    <option value="">All statuses</option>
+                    <option value="GENERATED" <?= ($selectedPayrollStatus ?? '') === 'GENERATED' ? 'selected' : '' ?>>Generated</option>
+                    <option value="RELEASED" <?= ($selectedPayrollStatus ?? '') === 'RELEASED' ? 'selected' : '' ?>>Released</option>
+                    <option value="RECEIVED" <?= ($selectedPayrollStatus ?? '') === 'RECEIVED' ? 'selected' : '' ?>>Received</option>
+                </select>
+            </div>
+            <div class="col-md-1 d-grid gap-2">
                 <button class="btn btn-dark">Apply</button>
                 <a href="<?= site_url('/admin/payroll') ?>" class="btn btn-outline-secondary">Reset</a>
+            </div>
+            <div class="col-md-2 d-grid">
+                <a href="<?= site_url('/admin/payroll/export/csv?' . http_build_query(array_filter([
+                    'rider_id' => $selectedRiderId,
+                    'payroll_month' => $selectedPayrollMonth,
+                    'cutoff_period' => $selectedCutoff,
+                    'payroll_status' => $selectedPayrollStatus ?? '',
+                ], static fn ($value) => $value !== ''))) ?>" class="btn btn-outline-dark">Export CSV</a>
             </div>
         </form>
     </div>
@@ -280,3 +297,4 @@ document.addEventListener('DOMContentLoaded', () => {
 });
 </script>
 <?= $this->endSection() ?>
+

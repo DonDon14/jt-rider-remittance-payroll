@@ -29,9 +29,15 @@ $formatAccountLabel = static function (array $row): string {
 </div>
 
 <div class="card mb-3">
-    <div class="card-body">
-        <h5 class="mb-1"><?= esc($rider['rider_code']) ?> - <?= esc($rider['name']) ?></h5>
-        <div class="text-muted">Commission per successful parcel: PHP <?= number_format((float) $rider['commission_rate'], 2) ?></div>
+    <div class="card-body d-flex flex-wrap justify-content-between align-items-center gap-3">
+        <div>
+            <h5 class="mb-1"><?= esc($rider['rider_code']) ?> - <?= esc($rider['name']) ?></h5>
+            <div class="text-muted">Commission per successful parcel: PHP <?= number_format((float) $rider['commission_rate'], 2) ?></div>
+        </div>
+        <div class="d-flex gap-2 flex-wrap">
+            <div class="badge text-bg-light px-3 py-2">Month: <?= esc(date('F Y', strtotime($month . '-01'))) ?></div>
+            <div class="badge text-bg-dark px-3 py-2">Projected Net: PHP <?= number_format((float) $stats['projected_net'], 2) ?></div>
+        </div>
     </div>
 </div>
 
@@ -45,46 +51,49 @@ $formatAccountLabel = static function (array $row): string {
     </div>
 <?php endif; ?>
 
-<div class="card salary-focus-card mb-3">
-    <div class="card-body">
-        <div class="stat-label">Running Salary For <?= esc(date('F Y', strtotime($month . '-01'))) ?></div>
-        <div class="salary-focus-value">PHP <?= number_format((float) $stats['running_salary'], 2) ?></div>
-        <div class="text-muted">This is the current salary total from successful deliveries before deductions and added repayments.</div>
-    </div>
-</div>
+<ul class="nav nav-tabs mb-3" id="riderPortalTabs" role="tablist">
+    <li class="nav-item" role="presentation">
+        <button class="nav-link active" id="overview-tab" data-bs-toggle="tab" data-bs-target="#overview-pane" type="button" role="tab">Overview</button>
+    </li>
+    <li class="nav-item" role="presentation">
+        <button class="nav-link" id="deliveries-tab" data-bs-toggle="tab" data-bs-target="#deliveries-pane" type="button" role="tab">Deliveries</button>
+    </li>
+    <li class="nav-item" role="presentation">
+        <button class="nav-link" id="requests-tab" data-bs-toggle="tab" data-bs-target="#requests-pane" type="button" role="tab">Requests</button>
+    </li>
+    <li class="nav-item" role="presentation">
+        <button class="nav-link" id="payroll-tab" data-bs-toggle="tab" data-bs-target="#payroll-pane" type="button" role="tab">Payroll</button>
+    </li>
+    <li class="nav-item" role="presentation">
+        <button class="nav-link" id="announcements-tab" data-bs-toggle="tab" data-bs-target="#announcements-pane" type="button" role="tab">Announcements</button>
+    </li>
+</ul>
 
-<div class="row g-3 mb-3">
-    <div class="col-md-3"><div class="card stat-card"><div class="card-body"><div class="stat-label">Allocated</div><div class="stat-value"><?= (int) $stats['allocated'] ?></div></div></div></div>
-    <div class="col-md-3"><div class="card stat-card"><div class="card-body"><div class="stat-label">Successful</div><div class="stat-value"><?= (int) $stats['successful'] ?></div></div></div></div>
-    <div class="col-md-3"><div class="card stat-card"><div class="card-body"><div class="stat-label">Expected Remittance</div><div class="stat-value">PHP <?= number_format((float) $stats['expected_remittance'], 2) ?></div></div></div></div>
-    <div class="col-md-3"><div class="card stat-card"><div class="card-body"><div class="stat-label">Outstanding Shortage</div><div class="stat-value">PHP <?= number_format((float) $stats['outstanding_shortage_balance'], 2) ?></div></div></div></div>
-</div>
-
-<div class="row g-3 mb-3">
-    <div class="col-md-3"><div class="card"><div class="card-body"><div class="stat-label">Total Remitted</div><div class="stat-value">PHP <?= number_format((float) $stats['total_remitted'], 2) ?></div></div></div></div>
-    <div class="col-md-3"><div class="card"><div class="card-body"><div class="stat-label">Month Shortage Deductions</div><div class="stat-value">PHP <?= number_format((float) $stats['shortage_deductions'], 2) ?></div></div></div></div>
-    <div class="col-md-3"><div class="card"><div class="card-body"><div class="stat-label">Month Repayments</div><div class="stat-value">PHP <?= number_format((float) $stats['shortage_repayments'], 2) ?></div></div></div></div>
-    <div class="col-md-3"><div class="card"><div class="card-body"><div class="stat-label">Projected Net</div><div class="stat-value">PHP <?= number_format((float) $stats['projected_net'], 2) ?></div></div></div></div>
-</div>
-
-<div class="card mb-3">
-    <div class="card-header fw-semibold">Branch Announcements</div>
-    <div class="list-group list-group-flush">
-        <?php foreach ($announcements as $announcement): ?>
-            <div class="list-group-item">
-                <div class="fw-semibold"><?= esc($announcement['title']) ?></div>
-                <div class="small text-muted mb-1">Published <?= esc(date('Y-m-d', strtotime((string) $announcement['published_at']))) ?></div>
-                <div><?= esc($announcement['message']) ?></div>
+<div class="tab-content" id="riderPortalTabsContent">
+    <div class="tab-pane fade show active" id="overview-pane" role="tabpanel" aria-labelledby="overview-tab" tabindex="0">
+        <div class="card salary-focus-card mb-3">
+            <div class="card-body">
+                <div class="stat-label">Running Salary For <?= esc(date('F Y', strtotime($month . '-01'))) ?></div>
+                <div class="salary-focus-value">PHP <?= number_format((float) $stats['running_salary'], 2) ?></div>
+                <div class="text-muted">This is the current salary total from successful deliveries before deductions and added repayments.</div>
             </div>
-        <?php endforeach; ?>
-        <?php if (empty($announcements)): ?>
-            <div class="list-group-item text-muted">No active announcements.</div>
-        <?php endif; ?>
-    </div>
-</div>
+        </div>
 
-<div class="row g-3 mb-3">
-    <div class="col-lg-7">
+        <div class="row g-3 mb-3">
+            <div class="col-md-3"><div class="card stat-card"><div class="card-body"><div class="stat-label">Allocated</div><div class="stat-value"><?= (int) $stats['allocated'] ?></div></div></div></div>
+            <div class="col-md-3"><div class="card stat-card"><div class="card-body"><div class="stat-label">Successful</div><div class="stat-value"><?= (int) $stats['successful'] ?></div></div></div></div>
+            <div class="col-md-3"><div class="card stat-card"><div class="card-body"><div class="stat-label">Expected Remittance</div><div class="stat-value">PHP <?= number_format((float) $stats['expected_remittance'], 2) ?></div></div></div></div>
+            <div class="col-md-3"><div class="card stat-card"><div class="card-body"><div class="stat-label">Outstanding Shortage</div><div class="stat-value">PHP <?= number_format((float) $stats['outstanding_shortage_balance'], 2) ?></div></div></div></div>
+        </div>
+
+        <div class="row g-3">
+            <div class="col-md-4"><div class="card"><div class="card-body"><div class="stat-label">Total Remitted</div><div class="stat-value">PHP <?= number_format((float) $stats['total_remitted'], 2) ?></div></div></div></div>
+            <div class="col-md-4"><div class="card"><div class="card-body"><div class="stat-label">Month Shortage Deductions</div><div class="stat-value">PHP <?= number_format((float) $stats['shortage_deductions'], 2) ?></div></div></div></div>
+            <div class="col-md-4"><div class="card"><div class="card-body"><div class="stat-label">Month Repayments</div><div class="stat-value">PHP <?= number_format((float) $stats['shortage_repayments'], 2) ?></div></div></div></div>
+        </div>
+    </div>
+
+    <div class="tab-pane fade" id="deliveries-pane" role="tabpanel" aria-labelledby="deliveries-tab" tabindex="0">
         <div class="card">
             <div class="card-header fw-semibold">Delivery History</div>
             <div class="table-responsive">
@@ -118,8 +127,9 @@ $formatAccountLabel = static function (array $row): string {
             </div>
         </div>
     </div>
-    <div class="col-lg-5">
-        <div class="card mb-3">
+
+    <div class="tab-pane fade" id="requests-pane" role="tabpanel" aria-labelledby="requests-tab" tabindex="0">
+        <div class="card">
             <div class="card-header fw-semibold">Submitted Delivery Requests</div>
             <div class="list-group list-group-flush">
                 <?php foreach ($submissionHistory as $submission): ?>
@@ -128,6 +138,7 @@ $formatAccountLabel = static function (array $row): string {
                             <div>
                                 <div class="fw-semibold"><?= esc($submission['delivery_date']) ?></div>
                                 <div class="small text-muted">Allocated <?= (int) $submission['allocated_parcels'] ?> | Successful <?= (int) $submission['successful_deliveries'] ?></div>
+                                <div class="small text-muted">Expected Remittance: PHP <?= number_format((float) ($submission['expected_remittance'] ?? 0), 2) ?></div>
                                 <div class="small text-muted">Remittance account: <?= esc($formatAccountLabel($submission)) ?></div>
                             </div>
                             <span class="badge <?= ($submission['status'] ?? '') === 'APPROVED' ? 'badge-over' : (($submission['status'] ?? '') === 'REJECTED' ? 'badge-short' : 'badge-balanced') ?>"><?= esc($submission['status']) ?></span>
@@ -139,7 +150,10 @@ $formatAccountLabel = static function (array $row): string {
                 <?php endif; ?>
             </div>
         </div>
-        <div class="card h-100">
+    </div>
+
+    <div class="tab-pane fade" id="payroll-pane" role="tabpanel" aria-labelledby="payroll-tab" tabindex="0">
+        <div class="card">
             <div class="card-header fw-semibold">Recent Payroll History</div>
             <div class="list-group list-group-flush">
                 <?php foreach ($payrollHistory as $payroll): ?>
@@ -149,9 +163,13 @@ $formatAccountLabel = static function (array $row): string {
                             <div>
                                 <div class="fw-semibold"><?= esc($payroll['start_date'] ?? $payroll['month_year']) ?> to <?= esc($payroll['end_date'] ?? $payroll['month_year']) ?></div>
                                 <div class="small text-muted">Net Pay: PHP <?= number_format((float) $payroll['net_pay'], 2) ?></div>
+                                <div class="small text-muted">Gross Earnings: PHP <?= number_format((float) ($payroll['gross_earnings'] ?? 0), 2) ?></div>
                                 <div class="small text-muted">Outstanding Shortage: PHP <?= number_format((float) ($payroll['outstanding_shortage_balance'] ?? 0), 2) ?></div>
                                 <?php if (! empty($payroll['payout_method'])): ?>
                                     <div class="small text-muted">Payout Method: <?= esc(str_replace('_', ' ', (string) $payroll['payout_method'])) ?></div>
+                                <?php endif; ?>
+                                <?php if (! empty($payroll['payout_reference'])): ?>
+                                    <div class="small text-muted">Reference: <?= esc($payroll['payout_reference']) ?></div>
                                 <?php endif; ?>
                                 <?php if (! empty($payroll['released_at'])): ?>
                                     <div class="small text-muted">Released: <?= esc($payroll['released_at']) ?></div>
@@ -175,6 +193,24 @@ $formatAccountLabel = static function (array $row): string {
                 <?php endforeach; ?>
                 <?php if (empty($payrollHistory)): ?>
                     <div class="list-group-item text-muted">No payroll history yet.</div>
+                <?php endif; ?>
+            </div>
+        </div>
+    </div>
+
+    <div class="tab-pane fade" id="announcements-pane" role="tabpanel" aria-labelledby="announcements-tab" tabindex="0">
+        <div class="card">
+            <div class="card-header fw-semibold">Branch Announcements</div>
+            <div class="list-group list-group-flush">
+                <?php foreach ($announcements as $announcement): ?>
+                    <div class="list-group-item">
+                        <div class="fw-semibold"><?= esc($announcement['title']) ?></div>
+                        <div class="small text-muted mb-1">Published <?= esc(date('Y-m-d', strtotime((string) $announcement['published_at']))) ?></div>
+                        <div><?= esc($announcement['message']) ?></div>
+                    </div>
+                <?php endforeach; ?>
+                <?php if (empty($announcements)): ?>
+                    <div class="list-group-item text-muted">No active announcements.</div>
                 <?php endif; ?>
             </div>
         </div>
@@ -252,10 +288,7 @@ $formatAccountLabel = static function (array $row): string {
                     <p class="mb-0"><?= esc($latestAnnouncementPopup['message']) ?></p>
                 </div>
                 <div class="modal-footer">
-                    <form method="post" action="<?= site_url('/rider/announcements/' . (int) $latestAnnouncementPopup['id'] . '/read') ?>">
-                        <?= csrf_field() ?>
-                        <button class="btn btn-dark">Acknowledge</button>
-                    </form>
+                    <button type="button" class="btn btn-dark" data-bs-dismiss="modal">Close</button>
                 </div>
             </div>
         </div>
