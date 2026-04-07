@@ -68,6 +68,8 @@ $routes->post('/rider/announcements/(:num)/read', 'RiderController::markAnnounce
 
 $routes->group('api', static function ($routes) {
     $routes->post('login', 'Api\AuthController::login');
+    $routes->post('logout', 'Api\AuthController::logout');
+    $routes->post('logout-all', 'Api\AuthController::logoutAll');
     $routes->get('admin/pending-submissions', 'Api\AdminController::pendingSubmissions');
     $routes->post('admin/pending-submissions/(:num)/approve', 'Api\AdminController::approveSubmission/$1');
     $routes->post('admin/pending-submissions/(:num)/reject', 'Api\AdminController::rejectSubmission/$1');
@@ -84,3 +86,5 @@ $routes->group('api', static function ($routes) {
     $routes->post('rider/delivery-submissions', 'Api\RiderController::storeSubmission');
     $routes->post('rider/payroll/(:num)/confirm', 'Api\RiderController::confirmPayrollReceipt/$1');
 });
+
+

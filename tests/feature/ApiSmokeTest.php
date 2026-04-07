@@ -20,7 +20,7 @@ final class ApiSmokeTest extends CIUnitTestCase
         $this->seedBaseData();
     }
 
-    public function testRiderApiCanLoginAndCreateSubmission(): void
+    public function testRiderApiCanLoginCreateSubmissionAndListPaginatedResults(): void
     {
         $loginResult = $this->post('/api/login', [
             'username' => 'r-1003',
@@ -47,6 +47,32 @@ final class ApiSmokeTest extends CIUnitTestCase
         $result->assertStatus(201);
         $response = json_decode((string) $result->getJSON(), true);
         $this->assertSame('Delivery request submitted.', $response['data']['message'] ?? null);
+
+        db_connect()->table('delivery_submissions')->insert([
+            'rider_id' => 3,
+            'delivery_date' => '2026-04-11',
+            'allocated_parcels' => 10,
+            'successful_deliveries' => 9,
+            'failed_deliveries' => 1,
+            'expected_remittance' => 1500,
+            'remittance_account_id' => 1,
+            'notes' => 'Older submission',
+            'status' => 'PENDING',
+            'created_at' => date('Y-m-d H:i:s'),
+            'updated_at' => date('Y-m-d H:i:s'),
+        ]);
+
+        $listResult = $this->withHeaders([
+            'Authorization' => 'Bearer ' . $token,
+        ])->get('/api/rider/submissions?page=1&per_page=1');
+
+        $listResult->assertOK();
+        $listPayload = json_decode((string) $listResult->getJSON(), true);
+        $this->assertCount(1, $listPayload['data']['items'] ?? []);
+        $this->assertSame(1, $listPayload['data']['meta']['page'] ?? null);
+        $this->assertSame(1, $listPayload['data']['meta']['per_page'] ?? null);
+        $this->assertSame(2, $listPayload['data']['meta']['total'] ?? null);
+        $this->assertTrue((bool) ($listPayload['data']['meta']['has_more'] ?? false));
 
         $submission = db_connect()->table('delivery_submissions')
             ->where('rider_id', 3)
@@ -167,6 +193,33 @@ final class ApiSmokeTest extends CIUnitTestCase
         $payroll = $db->table('payrolls')->where('id', 1)->get()->getRowArray();
         $this->assertSame('RECEIVED', $payroll['payroll_status']);
         $this->assertSame('Received from API flow.', $payroll['received_notes']);
+    }
+
+    public function testApiLogoutRevokesCurrentToken(): void
+    {
+        $loginResult = $this->post('/api/login', [
+            'username' => 'admin',
+            'password' => 'secret123',
+            'device_name' => 'admin-phone',
+        ]);
+
+        $loginResult->assertOK();
+        $payload = json_decode((string) $loginResult->getJSON(), true);
+        $token = (string) ($payload['data']['token'] ?? '');
+
+        $logoutResult = $this->withHeaders([
+            'Authorization' => 'Bearer ' . $token,
+        ])->post('/api/logout');
+
+        $logoutResult->assertOK();
+        $logoutPayload = json_decode((string) $logoutResult->getJSON(), true);
+        $this->assertSame('Logged out successfully.', $logoutPayload['data']['message'] ?? null);
+
+        $afterLogout = $this->withHeaders([
+            'Authorization' => 'Bearer ' . $token,
+        ])->get('/api/admin/payrolls');
+
+        $afterLogout->assertStatus(401);
     }
 
     private function resetSchema(): void

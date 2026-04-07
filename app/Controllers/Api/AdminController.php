@@ -18,34 +18,36 @@ class AdminController extends BaseApiController
             return $user;
         }
 
-        $rows = (new DeliverySubmissionModel())
+        $pagination = $this->getPagination();
+        $submissionModel = new DeliverySubmissionModel();
+        $builder = $submissionModel
             ->select('delivery_submissions.*, riders.name, riders.rider_code, remittance_accounts.account_name AS remittance_account_name, remittance_accounts.account_number AS remittance_account_number')
             ->join('riders', 'riders.id = delivery_submissions.rider_id')
             ->join('remittance_accounts', 'remittance_accounts.id = delivery_submissions.remittance_account_id', 'left')
-            ->where('delivery_submissions.status', 'PENDING')
+            ->where('delivery_submissions.status', 'PENDING');
+        $total = $builder->countAllResults(false);
+        $rows = $builder
             ->orderBy('delivery_date', 'DESC')
             ->orderBy('delivery_submissions.id', 'DESC')
-            ->findAll(30);
+            ->findAll($pagination['per_page'], $pagination['offset']);
 
-        return $this->success([
-            'items' => array_map(static fn (array $row): array => [
-                'id' => (int) $row['id'],
-                'delivery_date' => (string) $row['delivery_date'],
-                'rider' => [
-                    'id' => (int) $row['rider_id'],
-                    'rider_code' => (string) ($row['rider_code'] ?? ''),
-                    'name' => (string) ($row['name'] ?? ''),
-                ],
-                'allocated_parcels' => (int) ($row['allocated_parcels'] ?? 0),
-                'successful_deliveries' => (int) ($row['successful_deliveries'] ?? 0),
-                'expected_remittance' => round((float) ($row['expected_remittance'] ?? 0), 2),
-                'notes' => (string) ($row['notes'] ?? ''),
-                'remittance_account' => [
-                    'name' => (string) ($row['remittance_account_name'] ?? ''),
-                    'number' => (string) ($row['remittance_account_number'] ?? ''),
-                ],
-            ], $rows),
-        ]);
+        return $this->successList(array_map(static fn (array $row): array => [
+            'id' => (int) $row['id'],
+            'delivery_date' => (string) $row['delivery_date'],
+            'rider' => [
+                'id' => (int) $row['rider_id'],
+                'rider_code' => (string) ($row['rider_code'] ?? ''),
+                'name' => (string) ($row['name'] ?? ''),
+            ],
+            'allocated_parcels' => (int) ($row['allocated_parcels'] ?? 0),
+            'successful_deliveries' => (int) ($row['successful_deliveries'] ?? 0),
+            'expected_remittance' => round((float) ($row['expected_remittance'] ?? 0), 2),
+            'notes' => (string) ($row['notes'] ?? ''),
+            'remittance_account' => [
+                'name' => (string) ($row['remittance_account_name'] ?? ''),
+                'number' => (string) ($row['remittance_account_number'] ?? ''),
+            ],
+        ], $rows), $pagination['page'], $pagination['per_page'], $total);
     }
 
     public function approveSubmission(int $submissionId)
@@ -206,8 +208,10 @@ class AdminController extends BaseApiController
             return $user;
         }
 
+        $pagination = $this->getPagination();
         $today = strtotime(date('Y-m-d'));
-        $rows = (new DeliveryRecordModel())
+        $deliveryModel = new DeliveryRecordModel();
+        $builder = $deliveryModel
             ->select('delivery_records.*, riders.name, riders.rider_code, remittance_accounts.account_name AS remittance_account_name, remittance_accounts.account_number AS remittance_account_number, remittances.id AS remittance_id, remittances.variance_type')
             ->join('riders', 'riders.id = delivery_records.rider_id')
             ->join('remittance_accounts', 'remittance_accounts.id = delivery_records.remittance_account_id', 'left')
@@ -215,10 +219,12 @@ class AdminController extends BaseApiController
             ->groupStart()
                 ->where('remittances.id', null)
                 ->orWhere('remittances.variance_type', 'PENDING')
-            ->groupEnd()
+            ->groupEnd();
+        $total = $builder->countAllResults(false);
+        $rows = $builder
             ->orderBy('delivery_date', 'DESC')
             ->orderBy('delivery_records.id', 'DESC')
-            ->findAll(30);
+            ->findAll($pagination['per_page'], $pagination['offset']);
 
         $items = array_map(static function (array $row) use ($today): array {
             $deliveryTs = strtotime((string) $row['delivery_date']);
@@ -244,7 +250,7 @@ class AdminController extends BaseApiController
             ];
         }, $rows);
 
-        return $this->success(['items' => $items]);
+        return $this->successList($items, $pagination['page'], $pagination['per_page'], $total);
     }
 
     public function shortages()
@@ -254,13 +260,17 @@ class AdminController extends BaseApiController
             return $user;
         }
 
-        $shortages = (new RemittanceModel())
+        $pagination = $this->getPagination();
+        $remittanceModel = new RemittanceModel();
+        $builder = $remittanceModel
             ->select('remittances.*, riders.name, riders.rider_code')
             ->join('riders', 'riders.id = remittances.rider_id')
-            ->where('remittances.variance_type', 'SHORT')
+            ->where('remittances.variance_type', 'SHORT');
+        $total = $builder->countAllResults(false);
+        $shortages = $builder
             ->orderBy('delivery_date', 'DESC')
             ->orderBy('remittances.id', 'DESC')
-            ->findAll();
+            ->findAll($pagination['per_page'], $pagination['offset']);
 
         $paymentRows = $shortages === [] ? [] : (new ShortagePaymentModel())
             ->select('remittance_id, SUM(amount) AS paid_total')
@@ -292,7 +302,7 @@ class AdminController extends BaseApiController
             ];
         }, $shortages);
 
-        return $this->success(['items' => $items]);
+        return $this->successList($items, $pagination['page'], $pagination['per_page'], $total);
     }
 
     public function payrolls()
@@ -302,38 +312,40 @@ class AdminController extends BaseApiController
             return $user;
         }
 
+        $pagination = $this->getPagination();
         $status = trim((string) $this->request->getGet('payroll_status'));
-        $builder = (new PayrollModel())
+        $payrollModel = new PayrollModel();
+        $builder = $payrollModel
             ->select('payrolls.*, riders.name, riders.rider_code')
-            ->join('riders', 'riders.id = payrolls.rider_id')
-            ->orderBy('end_date', 'DESC')
-            ->orderBy('payrolls.id', 'DESC');
+            ->join('riders', 'riders.id = payrolls.rider_id');
 
         if (in_array($status, ['GENERATED', 'RELEASED', 'RECEIVED'], true)) {
             $builder->where('payrolls.payroll_status', $status);
         }
 
-        $rows = $builder->findAll(30);
+        $total = $builder->countAllResults(false);
+        $rows = $builder
+            ->orderBy('end_date', 'DESC')
+            ->orderBy('payrolls.id', 'DESC')
+            ->findAll($pagination['per_page'], $pagination['offset']);
 
-        return $this->success([
-            'items' => array_map(static fn (array $row): array => [
-                'id' => (int) $row['id'],
-                'start_date' => (string) ($row['start_date'] ?? $row['month_year']),
-                'end_date' => (string) ($row['end_date'] ?? $row['month_year']),
-                'payroll_status' => (string) ($row['payroll_status'] ?? 'GENERATED'),
-                'net_pay' => round((float) ($row['net_pay'] ?? 0), 2),
-                'gross_earnings' => round((float) ($row['gross_earnings'] ?? 0), 2),
-                'payout_method' => (string) ($row['payout_method'] ?? ''),
-                'payout_reference' => (string) ($row['payout_reference'] ?? ''),
-                'released_at' => (string) ($row['released_at'] ?? ''),
-                'received_at' => (string) ($row['received_at'] ?? ''),
-                'rider' => [
-                    'id' => (int) $row['rider_id'],
-                    'rider_code' => (string) ($row['rider_code'] ?? ''),
-                    'name' => (string) ($row['name'] ?? ''),
-                ],
-            ], $rows),
-        ]);
+        return $this->successList(array_map(static fn (array $row): array => [
+            'id' => (int) $row['id'],
+            'start_date' => (string) ($row['start_date'] ?? $row['month_year']),
+            'end_date' => (string) ($row['end_date'] ?? $row['month_year']),
+            'payroll_status' => (string) ($row['payroll_status'] ?? 'GENERATED'),
+            'net_pay' => round((float) ($row['net_pay'] ?? 0), 2),
+            'gross_earnings' => round((float) ($row['gross_earnings'] ?? 0), 2),
+            'payout_method' => (string) ($row['payout_method'] ?? ''),
+            'payout_reference' => (string) ($row['payout_reference'] ?? ''),
+            'released_at' => (string) ($row['released_at'] ?? ''),
+            'received_at' => (string) ($row['received_at'] ?? ''),
+            'rider' => [
+                'id' => (int) $row['rider_id'],
+                'rider_code' => (string) ($row['rider_code'] ?? ''),
+                'name' => (string) ($row['name'] ?? ''),
+            ],
+        ], $rows), $pagination['page'], $pagination['per_page'], $total);
     }
 
     public function releasePayroll(int $id)

@@ -10,7 +10,6 @@ use App\Models\PayrollModel;
 use App\Models\RemittanceAccountModel;
 use App\Models\RemittanceModel;
 use App\Models\ShortagePaymentModel;
-use App\Models\UserModel;
 
 class RiderController extends BaseApiController
 {
@@ -116,27 +115,28 @@ class RiderController extends BaseApiController
             return $this->failUnauthorized('Rider profile not found.');
         }
 
-        $rows = (new PayrollModel())
-            ->where('rider_id', (int) $rider['id'])
+        $pagination = $this->getPagination();
+        $payrollModel = new PayrollModel();
+        $builder = $payrollModel->where('rider_id', (int) $rider['id']);
+        $total = $builder->countAllResults(false);
+        $rows = $builder
             ->orderBy('end_date', 'DESC')
             ->orderBy('id', 'DESC')
-            ->findAll(20);
+            ->findAll($pagination['per_page'], $pagination['offset']);
 
-        return $this->success([
-            'items' => array_map(static fn (array $row): array => [
-                'id' => (int) $row['id'],
-                'start_date' => (string) ($row['start_date'] ?? $row['month_year']),
-                'end_date' => (string) ($row['end_date'] ?? $row['month_year']),
-                'gross_earnings' => round((float) ($row['gross_earnings'] ?? 0), 2),
-                'net_pay' => round((float) ($row['net_pay'] ?? 0), 2),
-                'payroll_status' => (string) ($row['payroll_status'] ?? 'GENERATED'),
-                'payout_method' => (string) ($row['payout_method'] ?? ''),
-                'payout_reference' => (string) ($row['payout_reference'] ?? ''),
-                'released_at' => (string) ($row['released_at'] ?? ''),
-                'received_at' => (string) ($row['received_at'] ?? ''),
-                'received_notes' => (string) ($row['received_notes'] ?? ''),
-            ], $rows),
-        ]);
+        return $this->successList(array_map(static fn (array $row): array => [
+            'id' => (int) $row['id'],
+            'start_date' => (string) ($row['start_date'] ?? $row['month_year']),
+            'end_date' => (string) ($row['end_date'] ?? $row['month_year']),
+            'gross_earnings' => round((float) ($row['gross_earnings'] ?? 0), 2),
+            'net_pay' => round((float) ($row['net_pay'] ?? 0), 2),
+            'payroll_status' => (string) ($row['payroll_status'] ?? 'GENERATED'),
+            'payout_method' => (string) ($row['payout_method'] ?? ''),
+            'payout_reference' => (string) ($row['payout_reference'] ?? ''),
+            'released_at' => (string) ($row['released_at'] ?? ''),
+            'received_at' => (string) ($row['received_at'] ?? ''),
+            'received_notes' => (string) ($row['received_notes'] ?? ''),
+        ], $rows), $pagination['page'], $pagination['per_page'], $total);
     }
 
     public function submissions()
@@ -151,30 +151,32 @@ class RiderController extends BaseApiController
             return $this->failUnauthorized('Rider profile not found.');
         }
 
-        $rows = (new DeliverySubmissionModel())
+        $pagination = $this->getPagination();
+        $submissionModel = new DeliverySubmissionModel();
+        $builder = $submissionModel
             ->select('delivery_submissions.*, remittance_accounts.account_name AS remittance_account_name, remittance_accounts.account_number AS remittance_account_number')
             ->join('remittance_accounts', 'remittance_accounts.id = delivery_submissions.remittance_account_id', 'left')
-            ->where('rider_id', (int) $rider['id'])
+            ->where('rider_id', (int) $rider['id']);
+        $total = $builder->countAllResults(false);
+        $rows = $builder
             ->orderBy('delivery_date', 'DESC')
             ->orderBy('id', 'DESC')
-            ->findAll(20);
+            ->findAll($pagination['per_page'], $pagination['offset']);
 
-        return $this->success([
-            'items' => array_map(static fn (array $row): array => [
-                'id' => (int) $row['id'],
-                'delivery_date' => (string) $row['delivery_date'],
-                'allocated_parcels' => (int) ($row['allocated_parcels'] ?? 0),
-                'successful_deliveries' => (int) ($row['successful_deliveries'] ?? 0),
-                'failed_deliveries' => (int) ($row['failed_deliveries'] ?? 0),
-                'expected_remittance' => round((float) ($row['expected_remittance'] ?? 0), 2),
-                'status' => (string) ($row['status'] ?? 'PENDING'),
-                'remittance_account' => [
-                    'name' => (string) ($row['remittance_account_name'] ?? ''),
-                    'number' => (string) ($row['remittance_account_number'] ?? ''),
-                ],
-                'notes' => (string) ($row['notes'] ?? ''),
-            ], $rows),
-        ]);
+        return $this->successList(array_map(static fn (array $row): array => [
+            'id' => (int) $row['id'],
+            'delivery_date' => (string) $row['delivery_date'],
+            'allocated_parcels' => (int) ($row['allocated_parcels'] ?? 0),
+            'successful_deliveries' => (int) ($row['successful_deliveries'] ?? 0),
+            'failed_deliveries' => (int) ($row['failed_deliveries'] ?? 0),
+            'expected_remittance' => round((float) ($row['expected_remittance'] ?? 0), 2),
+            'status' => (string) ($row['status'] ?? 'PENDING'),
+            'remittance_account' => [
+                'name' => (string) ($row['remittance_account_name'] ?? ''),
+                'number' => (string) ($row['remittance_account_number'] ?? ''),
+            ],
+            'notes' => (string) ($row['notes'] ?? ''),
+        ], $rows), $pagination['page'], $pagination['per_page'], $total);
     }
 
     public function announcements()
@@ -212,7 +214,7 @@ class RiderController extends BaseApiController
             ];
         }, $rows)));
 
-        return $this->success(['items' => $items]);
+        return $this->successList($items, 1, max(1, count($items)), count($items));
     }
 
     public function remittanceAccounts()
@@ -228,14 +230,12 @@ class RiderController extends BaseApiController
             ->orderBy('account_name', 'ASC')
             ->findAll();
 
-        return $this->success([
-            'items' => array_map(static fn (array $row): array => [
-                'id' => (int) $row['id'],
-                'account_name' => (string) $row['account_name'],
-                'account_number' => (string) ($row['account_number'] ?? ''),
-                'description' => (string) ($row['description'] ?? ''),
-            ], $rows),
-        ]);
+        return $this->successList(array_map(static fn (array $row): array => [
+            'id' => (int) $row['id'],
+            'account_name' => (string) $row['account_name'],
+            'account_number' => (string) ($row['account_number'] ?? ''),
+            'description' => (string) ($row['description'] ?? ''),
+        ], $rows), 1, max(1, count($rows)), count($rows));
     }
 
     public function storeSubmission()

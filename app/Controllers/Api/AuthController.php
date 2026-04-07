@@ -81,4 +81,39 @@ class AuthController extends BaseApiController
             ] : null,
         ]);
     }
+
+    public function logout()
+    {
+        $user = $this->requireApiUser();
+        if (! is_array($user)) {
+            return $user;
+        }
+
+        $token = $this->getCurrentApiToken();
+        if (! $token) {
+            return $this->failUnauthorized('API token not found.');
+        }
+
+        (new ApiTokenModel())->delete((int) $token['id']);
+
+        return $this->success([
+            'message' => 'Logged out successfully.',
+        ]);
+    }
+
+    public function logoutAll()
+    {
+        $user = $this->requireApiUser();
+        if (! is_array($user)) {
+            return $user;
+        }
+
+        (new ApiTokenModel())
+            ->where('user_id', (int) $user['id'])
+            ->delete();
+
+        return $this->success([
+            'message' => 'All API sessions were revoked.',
+        ]);
+    }
 }

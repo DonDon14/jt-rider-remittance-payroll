@@ -10,6 +10,7 @@ use CodeIgniter\HTTP\ResponseInterface;
 abstract class BaseApiController extends \App\Controllers\BaseController
 {
     protected ?array $apiUser = null;
+    protected ?array $apiToken = null;
 
     protected function failUnauthorized(string $message = 'Unauthorized'): ResponseInterface
     {
@@ -33,6 +34,33 @@ abstract class BaseApiController extends \App\Controllers\BaseController
             'status' => 'ok',
             'data' => $data,
         ]);
+    }
+
+    protected function successList(array $items, int $page, int $perPage, int $total): ResponseInterface
+    {
+        return $this->success([
+            'items' => $items,
+            'meta' => [
+                'page' => $page,
+                'per_page' => $perPage,
+                'total' => $total,
+                'count' => count($items),
+                'has_more' => ($page * $perPage) < $total,
+            ],
+        ]);
+    }
+
+    protected function getPagination(): array
+    {
+        $page = max(1, (int) $this->request->getGet('page'));
+        $perPage = (int) $this->request->getGet('per_page');
+        $perPage = max(1, min(100, $perPage > 0 ? $perPage : 20));
+
+        return [
+            'page' => $page,
+            'per_page' => $perPage,
+            'offset' => ($page - 1) * $perPage,
+        ];
     }
 
     protected function requireApiUser(?string $role = null): array|ResponseInterface
@@ -84,6 +112,7 @@ abstract class BaseApiController extends \App\Controllers\BaseController
             'last_used_at' => date('Y-m-d H:i:s'),
         ]);
 
+        $this->apiToken = $token;
         $this->apiUser = array_merge($user, [
             'resolved_rider' => $rider,
         ]);
@@ -93,5 +122,10 @@ abstract class BaseApiController extends \App\Controllers\BaseController
         }
 
         return $this->apiUser;
+    }
+
+    protected function getCurrentApiToken(): ?array
+    {
+        return $this->apiToken;
     }
 }
