@@ -370,6 +370,26 @@ class AdminController extends BaseController
             ->orderBy('end_date', 'DESC')
             ->orderBy('start_date', 'DESC')
             ->findAll(10);
+        $payoutSummaryRows = (new PayrollModel())
+            ->select('payroll_status, COUNT(*) AS payroll_count, SUM(net_pay) AS net_total')
+            ->groupBy('payroll_status')
+            ->findAll();
+        $payoutSummary = [
+            'GENERATED' => ['count' => 0, 'net_total' => 0.0],
+            'RELEASED' => ['count' => 0, 'net_total' => 0.0],
+            'RECEIVED' => ['count' => 0, 'net_total' => 0.0],
+        ];
+        foreach ($payoutSummaryRows as $row) {
+            $status = (string) ($row['payroll_status'] ?? 'GENERATED');
+            if (! isset($payoutSummary[$status])) {
+                continue;
+            }
+
+            $payoutSummary[$status] = [
+                'count' => (int) ($row['payroll_count'] ?? 0),
+                'net_total' => round((float) ($row['net_total'] ?? 0), 2),
+            ];
+        }
 
         [$defaultStart, $defaultEnd, $defaultCutoff] = $this->getCutoffWindow(date('Y-m'), (int) date('j') <= 15 ? 'FIRST' : 'SECOND');
 
@@ -381,6 +401,7 @@ class AdminController extends BaseController
                 'defaultPayrollMonth' => substr($defaultStart, 0, 7),
                 'defaultCutoff' => $defaultCutoff,
                 'cutoffSummaries' => $cutoffSummaries,
+                'payoutSummary' => $payoutSummary,
                 'selectedRiderId' => $selectedRiderId,
                 'selectedPayrollMonth' => $selectedPayrollMonth,
                 'selectedCutoff' => $selectedCutoff,
@@ -1778,6 +1799,12 @@ class AdminController extends BaseController
             'shortage_total' => round(array_sum(array_map(static fn (array $row): float => (float) ($row['shortage_deductions'] ?? 0), $rows)), 2),
             'repayment_total' => round(array_sum(array_map(static fn (array $row): float => (float) ($row['shortage_payments_received'] ?? 0), $rows)), 2),
             'net_total' => round(array_sum(array_map(static fn (array $row): float => (float) ($row['net_pay'] ?? 0), $rows)), 2),
+            'generated_count' => count(array_filter($rows, static fn (array $row): bool => ($row['payroll_status'] ?? 'GENERATED') === 'GENERATED')),
+            'generated_total' => round(array_sum(array_map(static fn (array $row): float => ($row['payroll_status'] ?? 'GENERATED') === 'GENERATED' ? (float) ($row['net_pay'] ?? 0) : 0.0, $rows)), 2),
+            'released_count' => count(array_filter($rows, static fn (array $row): bool => ($row['payroll_status'] ?? '') === 'RELEASED')),
+            'released_total' => round(array_sum(array_map(static fn (array $row): float => ($row['payroll_status'] ?? '') === 'RELEASED' ? (float) ($row['net_pay'] ?? 0) : 0.0, $rows)), 2),
+            'received_count' => count(array_filter($rows, static fn (array $row): bool => ($row['payroll_status'] ?? '') === 'RECEIVED')),
+            'received_total' => round(array_sum(array_map(static fn (array $row): float => ($row['payroll_status'] ?? '') === 'RECEIVED' ? (float) ($row['net_pay'] ?? 0) : 0.0, $rows)), 2),
         ];
 
         $html = view('pdf/payroll_summary', [

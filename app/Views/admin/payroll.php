@@ -52,6 +52,36 @@
     </div>
 </div>
 
+<div class="row g-3 mb-3">
+    <div class="col-md-4">
+        <div class="card stat-card">
+            <div class="card-body">
+                <div class="stat-label">Generated Payrolls</div>
+                <div class="stat-value"><?= (int) ($payoutSummary['GENERATED']['count'] ?? 0) ?></div>
+                <div class="text-muted">PHP <?= number_format((float) ($payoutSummary['GENERATED']['net_total'] ?? 0), 2) ?> pending release</div>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-4">
+        <div class="card stat-card">
+            <div class="card-body">
+                <div class="stat-label">Released Payrolls</div>
+                <div class="stat-value"><?= (int) ($payoutSummary['RELEASED']['count'] ?? 0) ?></div>
+                <div class="text-muted">PHP <?= number_format((float) ($payoutSummary['RELEASED']['net_total'] ?? 0), 2) ?> awaiting rider confirmation</div>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-4">
+        <div class="card stat-card">
+            <div class="card-body">
+                <div class="stat-label">Received Payrolls</div>
+                <div class="stat-value"><?= (int) ($payoutSummary['RECEIVED']['count'] ?? 0) ?></div>
+                <div class="text-muted">PHP <?= number_format((float) ($payoutSummary['RECEIVED']['net_total'] ?? 0), 2) ?> confirmed by riders</div>
+            </div>
+        </div>
+    </div>
+</div>
+
 <div class="card mb-3">
     <div class="card-header fw-semibold">Filter Payroll History</div>
     <div class="card-body">
@@ -297,4 +327,6 @@ document.addEventListener('DOMContentLoaded', () => {
 });
 </script>
 <?= $this->endSection() ?>
+
+
 

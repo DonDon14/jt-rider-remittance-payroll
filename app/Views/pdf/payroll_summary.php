@@ -40,6 +40,7 @@
             <thead>
                 <tr>
                     <th>Rider</th>
+                    <th>Status</th>
                     <th>Successful</th>
                     <th>Gross</th>
                     <th>Bonus</th>
@@ -67,3 +68,4 @@
     </div>
 </body>
 </html>
+
