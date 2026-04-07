@@ -40,6 +40,7 @@
                     <div class="small text-muted">
                         <div>Default admin: <strong>admin</strong> / <strong>admin123</strong></div>
                         <div>Default rider password format: <strong>{rider_code lowercase}123</strong></div>
+                        <div class="mt-2">Default and reset passwords now require an immediate password change after login.</div>
                     </div>
                 </div>
             </div>

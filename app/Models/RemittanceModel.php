@@ -14,6 +14,7 @@ class RemittanceModel extends Model
         'rider_id',
         'delivery_record_id',
         'delivery_date',
+        'remittance_account_id',
         'denom_025',
         'denom_1',
         'denom_5',
@@ -34,6 +35,7 @@ class RemittanceModel extends Model
     protected array $casts = [
         'rider_id' => '?integer',
         'delivery_record_id' => '?integer',
+        'remittance_account_id' => '?integer',
         'denom_025' => '?integer',
         'denom_1' => '?integer',
         'denom_5' => '?integer',

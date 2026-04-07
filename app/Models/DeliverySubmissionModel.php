@@ -17,6 +17,7 @@ class DeliverySubmissionModel extends Model
         'successful_deliveries',
         'failed_deliveries',
         'expected_remittance',
+        'remittance_account_id',
         'notes',
         'status',
         'processed_delivery_record_id',
@@ -28,6 +29,7 @@ class DeliverySubmissionModel extends Model
         'successful_deliveries' => '?integer',
         'failed_deliveries' => '?integer',
         'expected_remittance' => '?float',
+        'remittance_account_id' => '?integer',
         'processed_delivery_record_id' => '?integer',
     ];
 

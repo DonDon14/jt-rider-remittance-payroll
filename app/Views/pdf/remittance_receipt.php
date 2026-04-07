@@ -28,6 +28,7 @@
     <h2>Remittance Receipt</h2>
     <div>Rider: <strong><?= esc($record['rider_code']) ?> - <?= esc($record['name']) ?></strong></div>
     <div>Date: <strong><?= esc($record['delivery_date']) ?></strong></div>
+    <div>Remittance Account: <strong><?= esc(trim((string) ($record['remittance_account_name'] ?? '')) !== '' ? (($record['remittance_account_name'] ?? '') . (! empty($record['remittance_account_number']) ? ' (' . $record['remittance_account_number'] . ')' : '')) : '-') ?></strong></div>
 
     <table>
         <thead><tr><th>Denomination</th><th>Quantity</th><th>Amount</th></tr></thead>
@@ -57,3 +58,4 @@
     </div>
 </body>
 </html>
+

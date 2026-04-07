@@ -1,6 +1,19 @@
 <?= $this->extend('layouts/main') ?>
 <?= $this->section('content') ?>
 
+<?php
+$formatAccountLabel = static function (array $row): string {
+    $name = trim((string) ($row['remittance_account_name'] ?? ''));
+    $number = trim((string) ($row['remittance_account_number'] ?? ''));
+
+    if ($name === '') {
+        return '-';
+    }
+
+    return $number !== '' ? $name . ' (' . $number . ')' : $name;
+};
+?>
+
 <div class="page-hero">
     <div>
         <h2 class="mb-0">Rider Portal</h2>
@@ -21,6 +34,16 @@
         <div class="text-muted">Commission per successful parcel: PHP <?= number_format((float) $rider['commission_rate'], 2) ?></div>
     </div>
 </div>
+
+<?php if (! empty($accountSecurity)): ?>
+    <div class="alert alert-<?= esc($accountSecurity['tone'] ?? 'secondary') ?> mb-3 d-flex justify-content-between align-items-center">
+        <div>
+            <div class="fw-semibold">Account Security: <?= esc($accountSecurity['label'] ?? 'Status available') ?></div>
+            <div class="small mb-0"><?= esc($accountSecurity['detail'] ?? '') ?></div>
+        </div>
+        <a href="<?= site_url('/change-password') ?>" class="btn btn-sm btn-outline-dark">Change Password</a>
+    </div>
+<?php endif; ?>
 
 <div class="card salary-focus-card mb-3">
     <div class="card-body">
@@ -105,6 +128,7 @@
                             <div>
                                 <div class="fw-semibold"><?= esc($submission['delivery_date']) ?></div>
                                 <div class="small text-muted">Allocated <?= (int) $submission['allocated_parcels'] ?> | Successful <?= (int) $submission['successful_deliveries'] ?></div>
+                                <div class="small text-muted">Remittance account: <?= esc($formatAccountLabel($submission)) ?></div>
                             </div>
                             <span class="badge <?= ($submission['status'] ?? '') === 'APPROVED' ? 'badge-over' : (($submission['status'] ?? '') === 'REJECTED' ? 'badge-short' : 'badge-balanced') ?>"><?= esc($submission['status']) ?></span>
                         </div>
@@ -166,11 +190,24 @@
                             <input type="number" step="0.01" min="0" name="expected_remittance" class="form-control" required>
                         </div>
                         <div class="col-12">
+                            <label class="form-label">Remittance Account Used</label>
+                            <select name="remittance_account_id" class="form-select" required>
+                                <option value="">Select the J&amp;T-connected account used for this remittance</option>
+                                <?php foreach ($remittanceAccounts as $account): ?>
+                                    <option value="<?= (int) $account['id'] ?>"><?= esc($formatAccountLabel($account)) ?></option>
+                                <?php endforeach; ?>
+                            </select>
+                            <div class="form-text">Choose which main remittance account you used so the branch can track collections correctly.</div>
+                        </div>
+                        <div class="col-12">
                             <label class="form-label">Notes</label>
                             <textarea name="notes" class="form-control" rows="3" placeholder="Optional notes for the admin about your delivery day."></textarea>
                         </div>
                     </div>
-                    <button class="btn btn-dark mt-3 w-100">Submit For Admin Review</button>
+                    <button class="btn btn-dark mt-3 w-100" <?= empty($remittanceAccounts) ? 'disabled' : '' ?>>Submit For Admin Review</button>
+                    <?php if (empty($remittanceAccounts)): ?>
+                        <div class="alert alert-warning mt-3 mb-0">No remittance accounts are configured yet. Ask the admin to add them in Settings before submitting.</div>
+                    <?php endif; ?>
                 </form>
             </div>
         </div>
@@ -218,3 +255,5 @@ document.addEventListener('DOMContentLoaded', () => {
 </script>
 <?php endif; ?>
 <?= $this->endSection() ?>
+
+

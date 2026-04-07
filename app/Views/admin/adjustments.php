@@ -9,6 +9,47 @@
     <button class="btn btn-dark" data-bs-toggle="modal" data-bs-target="#adjustmentModal">New Adjustment</button>
 </div>
 
+<div class="card mb-3">
+    <div class="card-body">
+        <form method="get" action="<?= site_url('/admin/adjustments') ?>" class="row g-2 align-items-end">
+            <div class="col-md-4">
+                <label class="form-label">Search</label>
+                <input type="text" name="q" value="<?= esc($search ?? '') ?>" class="form-control" placeholder="Rider, description, or batch reference">
+            </div>
+            <div class="col-md-2">
+                <label class="form-label">Type</label>
+                <select name="type" class="form-select">
+                    <option value="">All types</option>
+                    <option value="BONUS" <?= ($type ?? '') === 'BONUS' ? 'selected' : '' ?>>Bonus</option>
+                    <option value="DEDUCTION" <?= ($type ?? '') === 'DEDUCTION' ? 'selected' : '' ?>>Deduction</option>
+                </select>
+            </div>
+            <div class="col-md-2">
+                <label class="form-label">Status</label>
+                <select name="status" class="form-select">
+                    <option value="">All statuses</option>
+                    <option value="UNPAID" <?= ($status ?? '') === 'UNPAID' ? 'selected' : '' ?>>Unpaid</option>
+                    <option value="LOCKED" <?= ($status ?? '') === 'LOCKED' ? 'selected' : '' ?>>Locked to Payroll</option>
+                </select>
+            </div>
+            <div class="col-md-2">
+                <label class="form-label">Start Date</label>
+                <input type="date" name="start_date" value="<?= esc($startDate ?? '') ?>" class="form-control">
+            </div>
+            <div class="col-md-2">
+                <label class="form-label">End Date</label>
+                <input type="date" name="end_date" value="<?= esc($endDate ?? '') ?>" class="form-control">
+            </div>
+            <div class="col-md-1">
+                <button class="btn btn-primary w-100">Go</button>
+            </div>
+            <div class="col-md-1">
+                <a href="<?= site_url('/admin/adjustments') ?>" class="btn btn-outline-secondary w-100">Reset</a>
+            </div>
+        </form>
+    </div>
+</div>
+
 <div class="card">
     <div class="card-header fw-semibold">Adjustment History</div>
     <div class="table-responsive">
@@ -33,16 +74,22 @@
                         <td>PHP <?= number_format((float) $adjustment['amount'], 2) ?></td>
                         <td><?= esc($adjustment['description']) ?></td>
                         <td><?= esc($adjustment['batch_reference'] ?: '-') ?></td>
-                        <td><span class="badge <?= empty($adjustment['payroll_id']) ? 'text-bg-warning' : 'text-bg-success' ?>"><?= empty($adjustment['payroll_id']) ? 'UNPAID' : 'LOCKED TO PAYROLL' ?></span></td>
+                        <td><span class="badge <?= empty($adjustment['payroll_id']) ? 'text-bg-warning text-dark' : 'text-bg-success' ?>"><?= empty($adjustment['payroll_id']) ? 'UNPAID' : 'LOCKED TO PAYROLL' ?></span></td>
                     </tr>
                 <?php endforeach; ?>
                 <?php if (empty($adjustments)): ?>
-                    <tr><td colspan="7" class="text-center text-muted py-4">No adjustments yet.</td></tr>
+                    <tr><td colspan="7" class="text-center text-muted py-4">No adjustments matched the current filter.</td></tr>
                 <?php endif; ?>
             </tbody>
         </table>
     </div>
 </div>
+
+<?php if (! empty($pager)): ?>
+    <div class="mt-3">
+        <?= $pager->links($pageGroup) ?>
+    </div>
+<?php endif; ?>
 
 <div class="modal fade" id="adjustmentModal" tabindex="-1" aria-hidden="true">
     <div class="modal-dialog modal-dialog-centered">

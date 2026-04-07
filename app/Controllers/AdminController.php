@@ -3,11 +3,14 @@
 namespace App\Controllers;
 
 use App\Models\AnnouncementModel;
+use App\Models\DeliveryAuditLogModel;
+use App\Models\DeliveryCorrectionRequestModel;
 use App\Models\DeliveryRecordModel;
 use App\Models\DeliverySubmissionModel;
 use App\Models\PayrollModel;
 use App\Models\PayrollAdjustmentModel;
 use App\Models\RemittanceModel;
+use App\Models\RemittanceAccountModel;
 use App\Models\RiderModel;
 use App\Models\RiderCommissionRateModel;
 use App\Models\ShortagePaymentModel;
@@ -36,6 +39,7 @@ class AdminController extends BaseController
         $payrollModel = new PayrollModel();
         $adjustmentModel = new PayrollAdjustmentModel();
         $submissionModel = new DeliverySubmissionModel();
+        $correctionRequestModel = new DeliveryCorrectionRequestModel();
 
         $today = date('Y-m-d');
         $monthStart = date('Y-m-01');
@@ -52,18 +56,22 @@ class AdminController extends BaseController
             'overdue_remittances' => count(array_filter($this->getPendingRemittances(), static fn (array $item): bool => $item['aging_days'] > 0)),
             'month_adjustments' => (float) ($adjustmentModel->selectSum('amount')->where('adjustment_date >=', $monthStart)->where('adjustment_date <=', $monthEnd)->first()['amount'] ?? 0),
             'pending_submission_requests' => $submissionModel->where('status', 'PENDING')->countAllResults(),
+            'pending_correction_requests' => $correctionRequestModel->where('status', 'PENDING')->countAllResults(),
         ];
 
         $recentDeliveries = $deliveryModel
-            ->select('delivery_records.*, riders.name, riders.rider_code')
+            ->select('delivery_records.*, riders.name, riders.rider_code, remittance_accounts.account_name AS remittance_account_name, remittance_accounts.account_number AS remittance_account_number')
             ->join('riders', 'riders.id = delivery_records.rider_id')
+            ->join('remittance_accounts', 'remittance_accounts.id = delivery_records.remittance_account_id', 'left')
+            ->orderBy('delivery_records.updated_at', 'DESC')
             ->orderBy('delivery_date', 'DESC')
             ->orderBy('delivery_records.id', 'DESC')
             ->findAll(8);
 
         $recentRemittances = $remittanceModel
-            ->select('remittances.*, riders.name, riders.rider_code')
+            ->select('remittances.*, riders.name, riders.rider_code, remittance_accounts.account_name AS remittance_account_name, remittance_accounts.account_number AS remittance_account_number')
             ->join('riders', 'riders.id = remittances.rider_id')
+            ->join('remittance_accounts', 'remittance_accounts.id = remittances.remittance_account_id', 'left')
             ->orderBy('delivery_date', 'DESC')
             ->orderBy('remittances.id', 'DESC')
             ->findAll(8);
@@ -71,11 +79,20 @@ class AdminController extends BaseController
         $performance = $this->getRiderPerformanceRanking($monthStart, $monthEnd);
         $announcements = array_slice($this->getActiveAnnouncements(), 0, 5);
         $pendingSubmissions = $submissionModel
-            ->select('delivery_submissions.*, riders.name, riders.rider_code')
+            ->select('delivery_submissions.*, riders.name, riders.rider_code, remittance_accounts.account_name AS remittance_account_name, remittance_accounts.account_number AS remittance_account_number')
             ->join('riders', 'riders.id = delivery_submissions.rider_id')
+            ->join('remittance_accounts', 'remittance_accounts.id = delivery_submissions.remittance_account_id', 'left')
             ->where('delivery_submissions.status', 'PENDING')
             ->orderBy('delivery_date', 'DESC')
             ->orderBy('delivery_submissions.id', 'DESC')
+            ->findAll(5);
+        $pendingCorrections = $correctionRequestModel
+            ->select('delivery_correction_requests.*, delivery_records.delivery_date, riders.name, riders.rider_code')
+            ->join('delivery_records', 'delivery_records.id = delivery_correction_requests.delivery_record_id')
+            ->join('riders', 'riders.id = delivery_records.rider_id')
+            ->where('delivery_correction_requests.status', 'PENDING')
+            ->orderBy('delivery_correction_requests.created_at', 'DESC')
+            ->orderBy('delivery_correction_requests.id', 'DESC')
             ->findAll(5);
 
         return view('admin/dashboard', array_merge(
@@ -89,6 +106,7 @@ class AdminController extends BaseController
                 'lowRiders' => array_slice(array_reverse($performance), 0, 5),
                 'announcements' => $announcements,
                 'pendingSubmissions' => $pendingSubmissions,
+                'pendingCorrections' => $pendingCorrections,
             ]
         ));
     }
@@ -97,51 +115,39 @@ class AdminController extends BaseController
     {
         $search = trim((string) $this->request->getGet('q'));
         $status = trim((string) $this->request->getGet('status'));
-        $riderModel = new RiderModel();
-        $builder = $riderModel
-            ->select('riders.*, users.username, users.is_active AS user_is_active')
-            ->join('users', 'users.rider_id = riders.id AND users.role = "rider"', 'left')
-            ->orderBy('name', 'ASC');
-
-        if ($search !== '') {
-            $builder
-                ->groupStart()
-                ->like('riders.name', $search)
-                ->orLike('riders.rider_code', $search)
-                ->orLike('users.username', $search)
-                ->groupEnd();
-        }
-
-        if ($status === 'ACTIVE') {
-            $builder->where('riders.is_active', 1);
-        } elseif ($status === 'INACTIVE') {
-            $builder->where('riders.is_active', 0);
-        }
+        $riderModel = $this->buildRiderQuery($search, $status);
+        $riders = $riderModel->paginate(15, 'riders');
 
         return view('admin/riders', array_merge(
             $this->adminBaseData('riders'),
             [
                 'search' => $search,
                 'status' => $status,
-                'riders' => $builder->findAll(),
+                'riders' => $riders,
+                'pager' => $riderModel->pager,
+                'pageGroup' => 'riders',
             ]
         ));
     }
 
     public function deliveries()
     {
-        $deliveryModel = new DeliveryRecordModel();
+        $search = trim((string) $this->request->getGet('q'));
+        $source = trim((string) $this->request->getGet('source'));
+        $deliveryDate = trim((string) $this->request->getGet('delivery_date'));
+        $deliveryModel = $this->buildDeliveryQuery($search, $source, $deliveryDate);
+        $dailyRecords = $deliveryModel->paginate(20, 'deliveries');
 
         return view('admin/deliveries', array_merge(
             $this->adminBaseData('deliveries'),
             [
                 'today' => date('Y-m-d'),
-                'dailyRecords' => $deliveryModel
-                    ->select('delivery_records.*, riders.name, riders.rider_code')
-                    ->join('riders', 'riders.id = delivery_records.rider_id')
-                    ->orderBy('delivery_date', 'DESC')
-                    ->orderBy('delivery_records.id', 'DESC')
-                    ->findAll(30),
+                'search' => $search,
+                'source' => $source,
+                'deliveryDate' => $deliveryDate,
+                'dailyRecords' => $dailyRecords,
+                'pager' => $deliveryModel->pager,
+                'pageGroup' => 'deliveries',
             ]
         ));
     }
@@ -154,7 +160,9 @@ class AdminController extends BaseController
         $riderId = trim((string) $this->request->getGet('rider_id'));
         $remittanceStatus = trim((string) $this->request->getGet('remittance_status'));
 
-        $records = $this->getFilteredHistoryRecords($search, $startDate, $endDate, $riderId, $remittanceStatus);
+        $historyModel = $this->buildHistoryQuery($search, $startDate, $endDate, $riderId, $remittanceStatus);
+        $records = $historyModel->paginate(20, 'history');
+        $summaryRows = $this->buildHistoryQuery($search, $startDate, $endDate, $riderId, $remittanceStatus)->findAll();
 
         return view('admin/delivery_history', array_merge(
             $this->adminBaseData('history'),
@@ -165,13 +173,15 @@ class AdminController extends BaseController
                 'selectedRiderId' => $riderId,
                 'remittanceStatus' => $remittanceStatus,
                 'historySummary' => [
-                    'records' => count($records),
-                    'successful' => array_sum(array_column($records, 'successful_deliveries')),
-                    'salary_earnings' => round(array_sum(array_map(static fn (array $record): float => (float) ($record['total_due'] ?? 0), $records)), 2),
-                    'expected_remittance' => round(array_sum(array_map(static fn (array $record): float => (float) ($record['expected_remittance'] ?? 0), $records)), 2),
+                    'records' => count($summaryRows),
+                    'successful' => array_sum(array_column($summaryRows, 'successful_deliveries')),
+                    'salary_earnings' => round(array_sum(array_map(static fn (array $record): float => (float) ($record['total_due'] ?? 0), $summaryRows)), 2),
+                    'expected_remittance' => round(array_sum(array_map(static fn (array $record): float => (float) ($record['expected_remittance'] ?? 0), $summaryRows)), 2),
                 ],
                 'riders' => (new RiderModel())->orderBy('name', 'ASC')->findAll(),
                 'records' => $records,
+                'pager' => $historyModel->pager,
+                'pageGroup' => 'history',
             ]
         ));
     }
@@ -179,8 +189,11 @@ class AdminController extends BaseController
     public function deliveryShow(int $id)
     {
         $record = (new DeliveryRecordModel())
-            ->select('delivery_records.*, riders.name, riders.rider_code, riders.contact_number, riders.commission_rate')
+            ->select('delivery_records.*, riders.name, riders.rider_code, riders.contact_number, riders.commission_rate, delivery_submissions.status AS submission_status, delivery_submissions.notes AS submission_notes, delivery_accounts.account_name AS remittance_account_name, delivery_accounts.account_number AS remittance_account_number, submission_accounts.account_name AS submission_remittance_account_name, submission_accounts.account_number AS submission_remittance_account_number')
             ->join('riders', 'riders.id = delivery_records.rider_id')
+            ->join('delivery_submissions', 'delivery_submissions.id = delivery_records.source_submission_id', 'left')
+            ->join('remittance_accounts AS delivery_accounts', 'delivery_accounts.id = delivery_records.remittance_account_id', 'left')
+            ->join('remittance_accounts AS submission_accounts', 'submission_accounts.id = delivery_submissions.remittance_account_id', 'left')
             ->where('delivery_records.id', $id)
             ->first();
 
@@ -197,6 +210,19 @@ class AdminController extends BaseController
         if (! empty($record['payroll_id'])) {
             $payroll = (new PayrollModel())->find((int) $record['payroll_id']);
         }
+        $auditLogs = (new DeliveryAuditLogModel())
+            ->groupStart()
+                ->where('delivery_record_id', $id)
+                ->orWhere('delivery_submission_id', (int) ($record['source_submission_id'] ?? 0))
+            ->groupEnd()
+            ->orderBy('created_at', 'DESC')
+            ->orderBy('id', 'DESC')
+            ->findAll();
+        $correctionRequests = (new DeliveryCorrectionRequestModel())
+            ->where('delivery_record_id', $id)
+            ->orderBy('created_at', 'DESC')
+            ->orderBy('id', 'DESC')
+            ->findAll();
 
         return view('admin/delivery_show', array_merge(
             $this->adminBaseData('history'),
@@ -204,6 +230,64 @@ class AdminController extends BaseController
                 'record' => $record,
                 'remittance' => $remittance,
                 'payroll' => $payroll,
+                'auditLogs' => $auditLogs,
+                'correctionRequests' => $correctionRequests,
+            ]
+        ));
+    }
+
+    public function corrections()
+    {
+        $search = trim((string) $this->request->getGet('q'));
+        $status = trim((string) $this->request->getGet('status'));
+        $startDate = trim((string) $this->request->getGet('start_date'));
+        $endDate = trim((string) $this->request->getGet('end_date'));
+
+        $correctionModel = $this->buildCorrectionQuery($search, $status, $startDate, $endDate);
+        $rows = $correctionModel->paginate(20, 'corrections');
+        $summaryRows = $this->buildCorrectionQuery($search, $status, $startDate, $endDate)->findAll();
+
+        $summary = [
+            'pending' => count(array_filter($summaryRows, static fn (array $row): bool => ($row['status'] ?? '') === 'PENDING')),
+            'applied' => count(array_filter($summaryRows, static fn (array $row): bool => ($row['status'] ?? '') === 'APPLIED')),
+            'rejected' => count(array_filter($summaryRows, static fn (array $row): bool => ($row['status'] ?? '') === 'REJECTED')),
+        ];
+
+        return view('admin/corrections', array_merge(
+            $this->adminBaseData('corrections'),
+            [
+                'search' => $search,
+                'status' => $status,
+                'startDate' => $startDate,
+                'endDate' => $endDate,
+                'rows' => $rows,
+                'summary' => $summary,
+                'pager' => $correctionModel->pager,
+                'pageGroup' => 'corrections',
+            ]
+        ));
+    }
+
+    public function activity()
+    {
+        $search = trim((string) $this->request->getGet('q'));
+        $role = trim((string) $this->request->getGet('role'));
+        $startDate = trim((string) $this->request->getGet('start_date'));
+        $endDate = trim((string) $this->request->getGet('end_date'));
+
+        $activityModel = $this->buildActivityQuery($search, $role, $startDate, $endDate);
+        $rows = $activityModel->paginate(20, 'activity');
+
+        return view('admin/activity', array_merge(
+            $this->adminBaseData('activity'),
+            [
+                'search' => $search,
+                'role' => $role,
+                'startDate' => $startDate,
+                'endDate' => $endDate,
+                'rows' => $rows,
+                'pager' => $activityModel->pager,
+                'pageGroup' => 'activity',
             ]
         ));
     }
@@ -213,21 +297,23 @@ class AdminController extends BaseController
         $remittanceModel = new RemittanceModel();
         $submissionModel = new DeliverySubmissionModel();
 
-        $pendingDeliveries = $this->getPendingRemittances();
-        $pendingSubmissions = $submissionModel
-            ->select('delivery_submissions.*, riders.name, riders.rider_code')
+        $pendingDeliveries = $this->paginateArray($this->getPendingRemittances(), 15, 'pending_remittances');
+        $pendingSubmissionsModel = $submissionModel
+            ->select('delivery_submissions.*, riders.name, riders.rider_code, remittance_accounts.account_name AS remittance_account_name, remittance_accounts.account_number AS remittance_account_number')
             ->join('riders', 'riders.id = delivery_submissions.rider_id')
+            ->join('remittance_accounts', 'remittance_accounts.id = delivery_submissions.remittance_account_id', 'left')
             ->where('delivery_submissions.status', 'PENDING')
             ->orderBy('delivery_date', 'DESC')
-            ->orderBy('delivery_submissions.id', 'DESC')
-            ->findAll(30);
+            ->orderBy('delivery_submissions.id', 'DESC');
+        $pendingSubmissions = $pendingSubmissionsModel->paginate(12, 'pending_submissions');
 
-        $recentRemittances = $remittanceModel
-            ->select('remittances.*, riders.name, riders.rider_code')
+        $recentRemittancesModel = $remittanceModel
+            ->select('remittances.*, riders.name, riders.rider_code, remittance_accounts.account_name AS remittance_account_name, remittance_accounts.account_number AS remittance_account_number')
             ->join('riders', 'riders.id = remittances.rider_id')
+            ->join('remittance_accounts', 'remittance_accounts.id = remittances.remittance_account_id', 'left')
             ->orderBy('delivery_date', 'DESC')
-            ->orderBy('remittances.id', 'DESC')
-            ->findAll(30);
+            ->orderBy('remittances.id', 'DESC');
+        $recentRemittances = $recentRemittancesModel->paginate(12, 'recent_remittances');
 
         $recentRemittances = $this->decorateRemittanceStatuses($recentRemittances);
 
@@ -237,6 +323,8 @@ class AdminController extends BaseController
                 'pendingDeliveries' => $pendingDeliveries,
                 'pendingSubmissions' => $pendingSubmissions,
                 'recentRemittances' => $recentRemittances,
+                'pendingSubmissionsPager' => $pendingSubmissionsModel->pager,
+                'recentRemittancesPager' => $recentRemittancesModel->pager,
             ]
         ));
     }
@@ -244,8 +332,9 @@ class AdminController extends BaseController
     public function deliverySubmissionForm(int $submissionId)
     {
         $submission = (new DeliverySubmissionModel())
-            ->select('delivery_submissions.*, riders.name, riders.rider_code, riders.commission_rate')
+            ->select('delivery_submissions.*, riders.name, riders.rider_code, riders.commission_rate, remittance_accounts.account_name AS remittance_account_name, remittance_accounts.account_number AS remittance_account_number')
             ->join('riders', 'riders.id = delivery_submissions.rider_id')
+            ->join('remittance_accounts', 'remittance_accounts.id = delivery_submissions.remittance_account_id', 'left')
             ->where('delivery_submissions.id', $submissionId)
             ->first();
 
@@ -271,31 +360,10 @@ class AdminController extends BaseController
         $selectedPayrollMonth = trim((string) $this->request->getGet('payroll_month'));
         $selectedCutoff = trim((string) $this->request->getGet('cutoff_period'));
 
-        $payrollModel = new PayrollModel();
-        $payrollBuilder = $payrollModel
-            ->select('payrolls.*, riders.name, riders.rider_code')
-            ->join('riders', 'riders.id = payrolls.rider_id')
-            ->orderBy('end_date', 'DESC')
-            ->orderBy('payrolls.id', 'DESC');
+        $payrollModel = $this->buildPayrollQuery($selectedRiderId, $selectedPayrollMonth, $selectedCutoff);
+        $payrolls = $payrollModel->paginate(20, 'payrolls');
 
-        if ($selectedRiderId !== '' && ctype_digit($selectedRiderId)) {
-            $payrollBuilder->where('payrolls.rider_id', (int) $selectedRiderId);
-        }
-
-        if ($selectedPayrollMonth !== '' && in_array($selectedCutoff, ['FIRST', 'SECOND'], true)) {
-            [$filterStart, $filterEnd] = $this->getCutoffWindow($selectedPayrollMonth, $selectedCutoff);
-            $payrollBuilder
-                ->where('payrolls.start_date', $filterStart)
-                ->where('payrolls.end_date', $filterEnd);
-        } elseif ($selectedPayrollMonth !== '') {
-            $payrollBuilder
-                ->where('payrolls.start_date >=', $selectedPayrollMonth . '-01')
-                ->where('payrolls.start_date <=', date('Y-m-t', strtotime($selectedPayrollMonth . '-01')));
-        }
-
-        $payrolls = $payrollBuilder->findAll(50);
-
-        $cutoffSummaries = $payrollModel
+        $cutoffSummaries = (new PayrollModel())
             ->select('start_date, end_date, COUNT(*) AS rider_count, SUM(gross_earnings) AS gross_total, SUM(bonus_total) AS bonus_total, SUM(deduction_total) AS deduction_total, SUM(shortage_deductions) AS shortage_total, SUM(shortage_payments_received) AS repayment_total, SUM(net_pay) AS net_total')
             ->groupBy('start_date, end_date')
             ->orderBy('end_date', 'DESC')
@@ -315,14 +383,20 @@ class AdminController extends BaseController
                 'selectedRiderId' => $selectedRiderId,
                 'selectedPayrollMonth' => $selectedPayrollMonth,
                 'selectedCutoff' => $selectedCutoff,
+                'pager' => $payrollModel->pager,
+                'pageGroup' => 'payrolls',
             ]
         ));
     }
 
     public function settings()
     {
-        $rateModel = new RiderCommissionRateModel();
+        $historySearch = trim((string) $this->request->getGet('q'));
         $riders = (new RiderModel())->orderBy('name', 'ASC')->findAll();
+        $remittanceAccounts = (new RemittanceAccountModel())
+            ->orderBy('sort_order', 'ASC')
+            ->orderBy('account_name', 'ASC')
+            ->findAll();
 
         foreach ($riders as &$rider) {
             $currentRate = $this->getCommissionRateForDate((int) $rider['id'], date('Y-m-d'));
@@ -331,39 +405,89 @@ class AdminController extends BaseController
         }
         unset($rider);
 
-        $rateHistory = $rateModel
-            ->select('rider_commission_rates.*, riders.name, riders.rider_code')
-            ->join('riders', 'riders.id = rider_commission_rates.rider_id')
-            ->orderBy('effective_date', 'DESC')
-            ->orderBy('rider_commission_rates.id', 'DESC')
-            ->findAll(50);
+        $rateHistoryModel = $this->buildCommissionRateHistoryQuery($historySearch);
+        $rateHistory = $rateHistoryModel->paginate(20, 'commission_history');
 
         return view('admin/settings', array_merge(
             $this->adminBaseData('settings'),
             [
                 'riders' => $riders,
+                'remittanceAccounts' => $remittanceAccounts,
                 'today' => date('Y-m-d'),
                 'rateHistory' => $rateHistory,
+                'historySearch' => $historySearch,
+                'pager' => $rateHistoryModel->pager,
+                'pageGroup' => 'commission_history',
             ]
         ));
     }
 
     public function adjustments()
     {
-        $adjustments = (new PayrollAdjustmentModel())
-            ->select('payroll_adjustments.*, riders.name, riders.rider_code')
-            ->join('riders', 'riders.id = payroll_adjustments.rider_id')
-            ->orderBy('adjustment_date', 'DESC')
-            ->orderBy('payroll_adjustments.id', 'DESC')
-            ->findAll(50);
+        $search = trim((string) $this->request->getGet('q'));
+        $type = trim((string) $this->request->getGet('type'));
+        $status = trim((string) $this->request->getGet('status'));
+        $startDate = trim((string) $this->request->getGet('start_date'));
+        $endDate = trim((string) $this->request->getGet('end_date'));
+
+        $adjustmentModel = $this->buildAdjustmentQuery($search, $type, $status, $startDate, $endDate);
+        $adjustments = $adjustmentModel->paginate(20, 'adjustments');
 
         return view('admin/adjustments', array_merge(
             $this->adminBaseData('adjustments'),
             [
                 'today' => date('Y-m-d'),
                 'adjustments' => $adjustments,
+                'search' => $search,
+                'type' => $type,
+                'status' => $status,
+                'startDate' => $startDate,
+                'endDate' => $endDate,
+                'pager' => $adjustmentModel->pager,
+                'pageGroup' => 'adjustments',
             ]
         ));
+    }
+
+    public function adjustmentsCsv()
+    {
+        $search = trim((string) $this->request->getGet('q'));
+        $type = trim((string) $this->request->getGet('type'));
+        $status = trim((string) $this->request->getGet('status'));
+        $startDate = trim((string) $this->request->getGet('start_date'));
+        $endDate = trim((string) $this->request->getGet('end_date'));
+
+        $rows = $this->buildAdjustmentQuery($search, $type, $status, $startDate, $endDate)->findAll();
+
+        $lines = [
+            ['Date', 'Rider Code', 'Rider Name', 'Type', 'Amount', 'Description', 'Batch Reference', 'Status'],
+        ];
+
+        foreach ($rows as $row) {
+            $lines[] = [
+                (string) ($row['adjustment_date'] ?? ''),
+                (string) ($row['rider_code'] ?? ''),
+                (string) ($row['name'] ?? ''),
+                (string) ($row['type'] ?? ''),
+                number_format((float) ($row['amount'] ?? 0), 2, '.', ''),
+                (string) ($row['description'] ?? ''),
+                (string) ($row['batch_reference'] ?: '-'),
+                empty($row['payroll_id']) ? 'UNPAID' : 'LOCKED TO PAYROLL',
+            ];
+        }
+
+        $handle = fopen('php://temp', 'r+');
+        foreach ($lines as $line) {
+            fputcsv($handle, $line);
+        }
+        rewind($handle);
+        $csv = stream_get_contents($handle) ?: '';
+        fclose($handle);
+
+        return $this->response
+            ->setHeader('Content-Type', 'text/csv')
+            ->setHeader('Content-Disposition', 'attachment; filename="adjustments-export.csv"')
+            ->setBody($csv);
     }
 
     public function analytics()
@@ -433,21 +557,6 @@ class AdminController extends BaseController
         ));
     }
 
-    public function announcements()
-    {
-        $announcements = (new AnnouncementModel())
-            ->orderBy('published_at', 'DESC')
-            ->orderBy('id', 'DESC')
-            ->findAll(50);
-
-        return view('admin/announcements', array_merge(
-            $this->adminBaseData('announcements'),
-            [
-                'today' => date('Y-m-d'),
-                'announcements' => $announcements,
-            ]
-        ));
-    }
 
     public function createRider()
     {
@@ -498,6 +607,7 @@ class AdminController extends BaseController
                 'role' => 'rider',
                 'rider_id' => (int) $riderId,
                 'is_active' => 1,
+                'force_password_change' => 1,
             ]);
         }
 
@@ -569,6 +679,7 @@ class AdminController extends BaseController
                     'role' => 'rider',
                     'rider_id' => $id,
                     'is_active' => $isActive,
+                    'force_password_change' => 1,
                 ]);
             }
         }
@@ -599,6 +710,7 @@ class AdminController extends BaseController
                 'username' => $username,
                 'password_hash' => password_hash($newPassword, PASSWORD_DEFAULT),
                 'is_active' => (int) ($rider['is_active'] ?? 1),
+                'force_password_change' => 1,
             ]);
         } else {
             $userModel->insert([
@@ -607,6 +719,7 @@ class AdminController extends BaseController
                 'role' => 'rider',
                 'rider_id' => $id,
                 'is_active' => (int) ($rider['is_active'] ?? 1),
+                'force_password_change' => 1,
             ]);
         }
 
@@ -780,6 +893,62 @@ class AdminController extends BaseController
         return redirect()->to('/admin/settings')->with('success', 'Commission rate updated for ' . $rider['name'] . ' effective ' . $effectiveDate . '.');
     }
 
+    public function storeRemittanceAccount()
+    {
+        $rules = [
+            'account_name' => 'required|min_length[3]|max_length[120]',
+            'account_number' => 'permit_empty|max_length[80]',
+            'description' => 'permit_empty|max_length[255]',
+            'sort_order' => 'permit_empty|is_natural',
+            'is_active' => 'required|in_list[0,1]',
+        ];
+
+        if (! $this->validate($rules)) {
+            return redirect()->back()->withInput()->with('error', implode(' ', $this->validator->getErrors()));
+        }
+
+        (new RemittanceAccountModel())->insert([
+            'account_name' => trim((string) $this->request->getPost('account_name')),
+            'account_number' => trim((string) $this->request->getPost('account_number')),
+            'description' => trim((string) $this->request->getPost('description')),
+            'sort_order' => (int) ($this->request->getPost('sort_order') ?: 0),
+            'is_active' => (int) $this->request->getPost('is_active') === 1 ? 1 : 0,
+        ]);
+
+        return redirect()->to('/admin/settings')->with('success', 'Remittance account added.');
+    }
+
+    public function updateRemittanceAccount(int $id)
+    {
+        $accountModel = new RemittanceAccountModel();
+        $account = $accountModel->find($id);
+        if (! $account) {
+            return redirect()->to('/admin/settings')->with('error', 'Remittance account not found.');
+        }
+
+        $rules = [
+            'account_name' => 'required|min_length[3]|max_length[120]',
+            'account_number' => 'permit_empty|max_length[80]',
+            'description' => 'permit_empty|max_length[255]',
+            'sort_order' => 'permit_empty|is_natural',
+            'is_active' => 'required|in_list[0,1]',
+        ];
+
+        if (! $this->validate($rules)) {
+            return redirect()->back()->withInput()->with('error', implode(' ', $this->validator->getErrors()));
+        }
+
+        $accountModel->update($id, [
+            'account_name' => trim((string) $this->request->getPost('account_name')),
+            'account_number' => trim((string) $this->request->getPost('account_number')),
+            'description' => trim((string) $this->request->getPost('description')),
+            'sort_order' => (int) ($this->request->getPost('sort_order') ?: 0),
+            'is_active' => (int) $this->request->getPost('is_active') === 1 ? 1 : 0,
+        ]);
+
+        return redirect()->to('/admin/settings')->with('success', 'Remittance account updated.');
+    }
+
     public function storeDelivery()
     {
         $rules = [
@@ -789,6 +958,7 @@ class AdminController extends BaseController
             'successful_deliveries' => 'required|is_natural',
             'expected_remittance' => 'required|decimal',
             'commission_rate' => 'required|decimal|greater_than[0]',
+            'admin_entry_reason' => 'required|max_length[255]',
         ];
 
         if (! $this->validate($rules)) {
@@ -805,6 +975,7 @@ class AdminController extends BaseController
         $failed = max(0, $allocated - $successful);
         $expectedRemittance = round((float) $this->request->getPost('expected_remittance'), 2);
         $appliedCommissionRate = round((float) $this->request->getPost('commission_rate'), 2);
+        $adminReason = trim((string) $this->request->getPost('admin_entry_reason'));
 
         if ($successful > $allocated) {
             return redirect()->back()->withInput()->with('error', 'Successful deliveries cannot exceed allocated parcels.');
@@ -826,21 +997,58 @@ class AdminController extends BaseController
             'commission_rate' => $appliedCommissionRate,
             'total_due' => $totalDue,
             'notes' => (string) $this->request->getPost('notes'),
+            'last_admin_reason' => $adminReason,
         ];
 
         $deliveryModel = new DeliveryRecordModel();
+        $auditModel = new DeliveryAuditLogModel();
         $existing = $deliveryModel
             ->where('rider_id', (int) $this->request->getPost('rider_id'))
             ->where('delivery_date', (string) $this->request->getPost('delivery_date'))
             ->first();
 
         if ($existing) {
+            if (! empty($existing['payroll_id'])) {
+                return redirect()->back()->withInput()->with('error', 'This delivery day is already locked into payroll. Reopen the payroll batch or use a correction workflow before editing it.');
+            }
+            $payload['entry_source'] = $existing['entry_source'] ?? 'ADMIN_MANUAL';
+            $payload['source_submission_id'] = $existing['source_submission_id'] ?? null;
+            $payload['created_by_user_id'] = $existing['created_by_user_id'] ?? (int) session()->get('user_id');
             $deliveryModel->update((int) $existing['id'], $payload);
+            $this->logDeliveryAudit($auditModel, [
+                'delivery_record_id' => (int) $existing['id'],
+                'rider_id' => (int) $payload['rider_id'],
+                'action' => 'ADMIN_MANUAL_UPDATE',
+                'notes' => $adminReason,
+                'details_json' => json_encode([
+                    'entry_source' => $payload['entry_source'],
+                    'delivery_date' => $payload['delivery_date'],
+                    'successful_deliveries' => $successful,
+                    'commission_rate' => $appliedCommissionRate,
+                    'expected_remittance' => $expectedRemittance,
+                ], JSON_UNESCAPED_UNICODE),
+            ]);
 
             return redirect()->to('/admin/deliveries')->with('success', 'Existing rider-day record updated. Salary earning is PHP ' . number_format($totalDue, 2) . ' and expected remittance is PHP ' . number_format($expectedRemittance, 2) . '.');
         }
 
+        $payload['entry_source'] = 'ADMIN_MANUAL';
+        $payload['created_by_user_id'] = (int) session()->get('user_id');
         $deliveryModel->insert($payload);
+        $deliveryId = (int) $deliveryModel->getInsertID();
+        $this->logDeliveryAudit($auditModel, [
+            'delivery_record_id' => $deliveryId,
+            'rider_id' => (int) $payload['rider_id'],
+            'action' => 'ADMIN_MANUAL_CREATE',
+            'notes' => $adminReason,
+            'details_json' => json_encode([
+                'entry_source' => 'ADMIN_MANUAL',
+                'delivery_date' => $payload['delivery_date'],
+                'successful_deliveries' => $successful,
+                'commission_rate' => $appliedCommissionRate,
+                'expected_remittance' => $expectedRemittance,
+            ], JSON_UNESCAPED_UNICODE),
+        ]);
 
         return redirect()->to('/admin/deliveries')->with('success', 'Delivery record saved. Salary earning is PHP ' . number_format($totalDue, 2) . ' and expected remittance is PHP ' . number_format($expectedRemittance, 2) . '.');
     }
@@ -873,12 +1081,18 @@ class AdminController extends BaseController
             'successful_deliveries' => $successful,
             'failed_deliveries' => (int) ($submission['failed_deliveries'] ?? 0),
             'expected_remittance' => round((float) ($submission['expected_remittance'] ?? 0), 2),
+            'remittance_account_id' => ! empty($submission['remittance_account_id']) ? (int) $submission['remittance_account_id'] : null,
             'commission_rate' => $commissionRate,
             'total_due' => $totalDue,
             'notes' => (string) ($submission['notes'] ?? ''),
+            'entry_source' => 'RIDER_SUBMISSION',
+            'source_submission_id' => $submissionId,
+            'created_by_user_id' => (int) session()->get('user_id'),
+            'last_admin_reason' => 'Approved rider-submitted delivery request.',
         ];
 
         $deliveryModel = new DeliveryRecordModel();
+        $auditModel = new DeliveryAuditLogModel();
         $db = db_connect();
         $db->transStart();
 
@@ -889,6 +1103,12 @@ class AdminController extends BaseController
 
         if ($existing) {
             $deliveryId = (int) $existing['id'];
+            if (! empty($existing['payroll_id'])) {
+                $db->transRollback();
+
+                return redirect()->back()->withInput()->with('error', 'This delivery day is already locked into payroll. Reopen the payroll batch before approving the rider submission.');
+            }
+            $payload['created_by_user_id'] = $existing['created_by_user_id'] ?? (int) session()->get('user_id');
             $deliveryModel->update($deliveryId, $payload);
         } else {
             $deliveryId = (int) $deliveryModel->insert($payload);
@@ -904,6 +1124,27 @@ class AdminController extends BaseController
         if (! $db->transStatus()) {
             return redirect()->back()->withInput()->with('error', 'Unable to approve the delivery submission.');
         }
+
+        $this->logDeliveryAudit($auditModel, [
+            'delivery_record_id' => $deliveryId,
+            'delivery_submission_id' => $submissionId,
+            'rider_id' => (int) $submission['rider_id'],
+            'action' => $existing ? 'DELIVERY_UPDATED_FROM_SUBMISSION' : 'DELIVERY_CREATED_FROM_SUBMISSION',
+            'notes' => 'Admin approved rider submission and finalized commission rate.',
+            'details_json' => json_encode([
+                'commission_rate' => $commissionRate,
+                'expected_remittance' => $payload['expected_remittance'],
+                'successful_deliveries' => $successful,
+                'remittance_account' => $this->formatRemittanceAccountLabel($submission),
+            ], JSON_UNESCAPED_UNICODE),
+        ]);
+        $this->logDeliveryAudit($auditModel, [
+            'delivery_record_id' => $deliveryId,
+            'delivery_submission_id' => $submissionId,
+            'rider_id' => (int) $submission['rider_id'],
+            'action' => 'SUBMISSION_APPROVED',
+            'notes' => 'Rider submission approved.',
+        ]);
 
         $target = '/admin/remittance/' . $deliveryId . ($this->request->getGet('modal') === '1' ? '?modal=1' : '');
 
@@ -931,6 +1172,13 @@ class AdminController extends BaseController
             'notes' => $notes,
         ]);
 
+        $this->logDeliveryAudit(new DeliveryAuditLogModel(), [
+            'delivery_submission_id' => $submissionId,
+            'rider_id' => (int) ($submission['rider_id'] ?? 0),
+            'action' => 'SUBMISSION_REJECTED',
+            'notes' => $rejectionNote !== '' ? $rejectionNote : 'Submission rejected without additional note.',
+        ]);
+
         if ($isModal) {
             return $this->response
                 ->setHeader('Content-Type', 'text/html; charset=UTF-8')
@@ -940,11 +1188,155 @@ class AdminController extends BaseController
         return redirect()->to('/admin/remittances')->with('success', 'Rider submission rejected.');
     }
 
+    public function storeDeliveryCorrectionRequest(int $deliveryId)
+    {
+        $delivery = (new DeliveryRecordModel())->find($deliveryId);
+        if (! $delivery) {
+            return redirect()->to('/admin/history')->with('error', 'Delivery record not found.');
+        }
+
+        $rules = [
+            'allocated_parcels' => 'required|is_natural',
+            'successful_deliveries' => 'required|is_natural',
+            'expected_remittance' => 'required|decimal',
+            'commission_rate' => 'required|decimal|greater_than[0]',
+            'correction_reason' => 'required|max_length[1000]',
+            'notes' => 'permit_empty|max_length[1000]',
+        ];
+
+        if (! $this->validate($rules)) {
+            return redirect()->back()->withInput()->with('error', implode(' ', $this->validator->getErrors()));
+        }
+
+        $allocated = (int) $this->request->getPost('allocated_parcels');
+        $successful = (int) $this->request->getPost('successful_deliveries');
+        if ($successful > $allocated) {
+            return redirect()->back()->withInput()->with('error', 'Successful deliveries cannot exceed allocated parcels.');
+        }
+
+        $expectedRemittance = round((float) $this->request->getPost('expected_remittance'), 2);
+        $commissionRate = round((float) $this->request->getPost('commission_rate'), 2);
+        $notes = trim((string) $this->request->getPost('notes'));
+        $reason = trim((string) $this->request->getPost('correction_reason'));
+
+        $requestModel = new DeliveryCorrectionRequestModel();
+        $requestModel->insert([
+            'delivery_record_id' => $deliveryId,
+            'requested_by_user_id' => (int) session()->get('user_id') ?: null,
+            'status' => 'PENDING',
+            'reason' => $reason,
+            'requested_payload_json' => json_encode([
+                'allocated_parcels' => $allocated,
+                'successful_deliveries' => $successful,
+                'failed_deliveries' => max(0, $allocated - $successful),
+                'expected_remittance' => $expectedRemittance,
+                'commission_rate' => $commissionRate,
+                'total_due' => round($successful * $commissionRate, 2),
+                'notes' => $notes,
+            ], JSON_UNESCAPED_UNICODE),
+        ]);
+
+        $this->logDeliveryAudit(new DeliveryAuditLogModel(), [
+            'delivery_record_id' => $deliveryId,
+            'rider_id' => (int) ($delivery['rider_id'] ?? 0),
+            'action' => 'CORRECTION_REQUEST_CREATED',
+            'notes' => $reason,
+            'details_json' => json_encode([
+                'allocated_parcels' => $allocated,
+                'successful_deliveries' => $successful,
+                'expected_remittance' => $expectedRemittance,
+                'commission_rate' => $commissionRate,
+            ], JSON_UNESCAPED_UNICODE),
+        ]);
+
+        return redirect()->to('/admin/deliveries/' . $deliveryId)->with('success', 'Correction request recorded. Apply it explicitly after review.');
+    }
+
+    public function applyDeliveryCorrectionRequest(int $requestId)
+    {
+        $returnTo = $this->request->getPost('return_to') ?: '/admin/deliveries/' . (int) ($this->request->getPost('delivery_record_id') ?: 0);
+        $requestModel = new DeliveryCorrectionRequestModel();
+        $request = $requestModel->find($requestId);
+
+        if (! $request || ($request['status'] ?? '') !== 'PENDING') {
+            return redirect()->to($returnTo ?: '/admin/history')->with('error', 'Correction request not found or already resolved.');
+        }
+
+        $deliveryModel = new DeliveryRecordModel();
+        $delivery = $deliveryModel->find((int) $request['delivery_record_id']);
+        if (! $delivery) {
+            return redirect()->to($returnTo ?: '/admin/history')->with('error', 'Delivery record not found.');
+        }
+
+        if (! empty($delivery['payroll_id'])) {
+            return redirect()->to($returnTo ?: '/admin/deliveries/' . (int) $delivery['id'])->with('error', 'This delivery day is already locked into payroll. Reopen the payroll batch before applying the correction.');
+        }
+
+        $payload = json_decode((string) ($request['requested_payload_json'] ?? ''), true);
+        if (! is_array($payload)) {
+            return redirect()->to($returnTo ?: '/admin/deliveries/' . (int) $delivery['id'])->with('error', 'Correction payload is invalid.');
+        }
+
+        $deliveryPayload = [
+            'allocated_parcels' => (int) ($payload['allocated_parcels'] ?? $delivery['allocated_parcels']),
+            'successful_deliveries' => (int) ($payload['successful_deliveries'] ?? $delivery['successful_deliveries']),
+            'failed_deliveries' => (int) ($payload['failed_deliveries'] ?? $delivery['failed_deliveries']),
+            'expected_remittance' => round((float) ($payload['expected_remittance'] ?? $delivery['expected_remittance']), 2),
+            'commission_rate' => round((float) ($payload['commission_rate'] ?? $delivery['commission_rate']), 2),
+            'total_due' => round((float) ($payload['total_due'] ?? $delivery['total_due']), 2),
+            'notes' => (string) ($payload['notes'] ?? $delivery['notes']),
+            'last_admin_reason' => 'Applied correction request #' . $requestId . '. ' . trim((string) $request['reason']),
+        ];
+
+        $deliveryModel->update((int) $delivery['id'], $deliveryPayload);
+        $requestModel->update($requestId, [
+            'status' => 'APPLIED',
+            'resolution_note' => 'Correction applied to delivery record.',
+            'applied_at' => date('Y-m-d H:i:s'),
+        ]);
+
+        $this->logDeliveryAudit(new DeliveryAuditLogModel(), [
+            'delivery_record_id' => (int) $delivery['id'],
+            'rider_id' => (int) ($delivery['rider_id'] ?? 0),
+            'action' => 'CORRECTION_REQUEST_APPLIED',
+            'notes' => (string) $request['reason'],
+            'details_json' => json_encode($payload, JSON_UNESCAPED_UNICODE),
+        ]);
+
+        return redirect()->to($returnTo ?: '/admin/deliveries/' . (int) $delivery['id'])->with('success', 'Correction request applied to the delivery record.');
+    }
+
+    public function rejectDeliveryCorrectionRequest(int $requestId)
+    {
+        $returnTo = $this->request->getPost('return_to') ?: '/admin/deliveries/' . (int) ($this->request->getPost('delivery_record_id') ?: 0);
+        $requestModel = new DeliveryCorrectionRequestModel();
+        $request = $requestModel->find($requestId);
+
+        if (! $request || ($request['status'] ?? '') !== 'PENDING') {
+            return redirect()->to($returnTo ?: '/admin/history')->with('error', 'Correction request not found or already resolved.');
+        }
+
+        $resolutionNote = trim((string) $this->request->getPost('resolution_note'));
+        $requestModel->update($requestId, [
+            'status' => 'REJECTED',
+            'resolution_note' => $resolutionNote !== '' ? $resolutionNote : 'Correction request rejected.',
+        ]);
+
+        $this->logDeliveryAudit(new DeliveryAuditLogModel(), [
+            'delivery_record_id' => (int) $request['delivery_record_id'],
+            'action' => 'CORRECTION_REQUEST_REJECTED',
+            'notes' => $resolutionNote !== '' ? $resolutionNote : 'Correction request rejected.',
+        ]);
+
+        return redirect()->to($returnTo ?: '/admin/deliveries/' . (int) $request['delivery_record_id'])->with('success', 'Correction request rejected.');
+    }
+
     public function remittanceForm(int $deliveryRecordId)
     {
         $delivery = (new DeliveryRecordModel())
-            ->select('delivery_records.*, riders.name, riders.rider_code')
+            ->select('delivery_records.*, riders.name, riders.rider_code, remittance_accounts.account_name AS remittance_account_name, remittance_accounts.account_number AS remittance_account_number')
             ->join('riders', 'riders.id = delivery_records.rider_id')
+            ->join('remittance_accounts', 'remittance_accounts.id = delivery_records.remittance_account_id', 'left')
             ->where('delivery_records.id', $deliveryRecordId)
             ->first();
 
@@ -1006,6 +1398,7 @@ class AdminController extends BaseController
             'rider_id' => (int) $delivery['rider_id'],
             'delivery_record_id' => $deliveryRecordId,
             'delivery_date' => $delivery['delivery_date'],
+            'remittance_account_id' => ! empty($delivery['remittance_account_id']) ? (int) $delivery['remittance_account_id'] : null,
             'total_due' => (float) $delivery['total_due'],
             'total_remitted' => $totalRemitted,
             'supposed_remittance' => $supposedRemittance,
@@ -1070,8 +1463,9 @@ class AdminController extends BaseController
     public function remittancePdf(int $id)
     {
         $record = (new RemittanceModel())
-            ->select('remittances.*, riders.name, riders.rider_code')
+            ->select('remittances.*, riders.name, riders.rider_code, remittance_accounts.account_name AS remittance_account_name, remittance_accounts.account_number AS remittance_account_number')
             ->join('riders', 'riders.id = remittances.rider_id')
+            ->join('remittance_accounts', 'remittance_accounts.id = remittances.remittance_account_id', 'left')
             ->where('remittances.id', $id)
             ->first();
 
@@ -1215,6 +1609,10 @@ class AdminController extends BaseController
         }
         $db->transComplete();
 
+        if (! $db->transStatus()) {
+            return redirect()->back()->withInput()->with('error', 'Unable to generate payroll for the selected cutoff.');
+        }
+
         return redirect()->to('/admin/payroll')->with('success', 'Payroll generated for ' . $rider['name'] . ' covering ' . $startDate . ' to ' . $endDate . '.');
     }
 
@@ -1285,6 +1683,74 @@ class AdminController extends BaseController
         return $this->renderPdf($html, 'payroll-summary-' . $startDate . '-to-' . $endDate . '.pdf');
     }
 
+    public function correctionsCsv()
+    {
+        $search = trim((string) $this->request->getGet('q'));
+        $status = trim((string) $this->request->getGet('status'));
+        $startDate = trim((string) $this->request->getGet('start_date'));
+        $endDate = trim((string) $this->request->getGet('end_date'));
+
+        $rows = $this->buildCorrectionQuery($search, $status, $startDate, $endDate)->findAll();
+
+        $lines = [
+            ['Requested At', 'Delivery Date', 'Rider Code', 'Rider Name', 'Reason', 'Status', 'Payroll Lock', 'Requested Delivered', 'Requested Commission', 'Requested Expected Remittance'],
+        ];
+
+        foreach ($rows as $row) {
+            $requested = json_decode((string) ($row['requested_payload_json'] ?? ''), true) ?: [];
+            $lines[] = [
+                (string) ($row['created_at'] ?? ''),
+                (string) ($row['delivery_date'] ?? ''),
+                (string) ($row['rider_code'] ?? ''),
+                (string) ($row['name'] ?? ''),
+                (string) ($row['reason'] ?? ''),
+                (string) ($row['status'] ?? 'PENDING'),
+                ! empty($row['payroll_id']) ? 'Locked' : 'Open',
+                isset($requested['successful_deliveries']) ? (string) ((int) $requested['successful_deliveries']) : '',
+                isset($requested['commission_rate']) ? number_format((float) $requested['commission_rate'], 2, '.', '') : '',
+                isset($requested['expected_remittance']) ? number_format((float) $requested['expected_remittance'], 2, '.', '') : '',
+            ];
+        }
+
+        $handle = fopen('php://temp', 'r+');
+        foreach ($lines as $line) {
+            fputcsv($handle, $line);
+        }
+        rewind($handle);
+        $csv = stream_get_contents($handle) ?: '';
+        fclose($handle);
+
+        return $this->response
+            ->setHeader('Content-Type', 'text/csv')
+            ->setHeader('Content-Disposition', 'attachment; filename="corrections-export.csv"')
+            ->setBody($csv);
+    }
+
+    public function announcements()
+    {
+        $search = trim((string) $this->request->getGet('q'));
+        $status = trim((string) $this->request->getGet('status'));
+        $startDate = trim((string) $this->request->getGet('start_date'));
+        $endDate = trim((string) $this->request->getGet('end_date'));
+
+        $announcementModel = $this->buildAnnouncementQuery($search, $status, $startDate, $endDate);
+        $announcements = $announcementModel->paginate(15, 'announcements');
+
+        return view('admin/announcements', array_merge(
+            $this->adminBaseData('announcements'),
+            [
+                'announcements' => $announcements,
+                'today' => date('Y-m-d'),
+                'search' => $search,
+                'status' => $status,
+                'startDate' => $startDate,
+                'endDate' => $endDate,
+                'pager' => $announcementModel->pager,
+                'pageGroup' => 'announcements',
+            ]
+        ));
+    }
+
     public function deliveryHistoryCsv()
     {
         $search = trim((string) $this->request->getGet('q'));
@@ -1293,10 +1759,10 @@ class AdminController extends BaseController
         $riderId = trim((string) $this->request->getGet('rider_id'));
         $remittanceStatus = trim((string) $this->request->getGet('remittance_status'));
 
-        $records = $this->getFilteredHistoryRecords($search, $startDate, $endDate, $riderId, $remittanceStatus, 1000);
+        $records = $this->buildHistoryQuery($search, $startDate, $endDate, $riderId, $remittanceStatus)->findAll();
 
         $lines = [
-            ['Date', 'Rider Code', 'Rider Name', 'Allocated', 'Successful', 'Failed', 'Salary Earning', 'Expected Remittance', 'Remittance Status'],
+            ['Date', 'Rider Code', 'Rider Name', 'Source', 'Allocated', 'Successful', 'Failed', 'Salary Earning', 'Expected Remittance', 'Remittance Status'],
         ];
 
         foreach ($records as $record) {
@@ -1304,6 +1770,7 @@ class AdminController extends BaseController
                 (string) $record['delivery_date'],
                 (string) $record['rider_code'],
                 (string) $record['name'],
+                (string) (($record['entry_source'] ?? 'ADMIN_MANUAL') === 'RIDER_SUBMISSION' ? 'RIDER_SUBMISSION' : 'ADMIN_MANUAL'),
                 (int) $record['allocated_parcels'],
                 (int) $record['successful_deliveries'],
                 (int) $record['failed_deliveries'],
@@ -1370,12 +1837,27 @@ class AdminController extends BaseController
         $pendingSubmissionCount = (new DeliverySubmissionModel())
             ->where('status', 'PENDING')
             ->countAllResults();
+        $pendingCorrectionCount = (new DeliveryCorrectionRequestModel())
+            ->where('status', 'PENDING')
+            ->countAllResults();
+        $currentUser = (new UserModel())->find((int) session()->get('user_id'));
 
         return [
             'activeTab' => $activeTab,
             'title' => 'Admin - J&T Rider Remittance & Payroll',
             'riders' => (new RiderModel())->where('is_active', 1)->orderBy('name', 'ASC')->findAll(),
             'pendingSubmissionCount' => $pendingSubmissionCount,
+            'pendingCorrectionCount' => $pendingCorrectionCount,
+            'queueSummary' => [
+                'pending_submissions' => $pendingSubmissionCount,
+                'pending_corrections' => $pendingCorrectionCount,
+                'overdue_remittances' => count(array_filter($this->getPendingRemittances(), static fn (array $item): bool => $item['aging_days'] > 0)),
+            ],
+            'accountSecurity' => [
+                'label' => ! empty($currentUser) && ! empty($currentUser['is_active']) ? 'Password secured' : 'Check account access',
+                'tone' => ! empty($currentUser) && ! empty($currentUser['is_active']) ? 'success' : 'warning',
+                'detail' => 'Change your password anytime from the sidebar.',
+            ],
         ];
     }
 
@@ -1394,6 +1876,18 @@ class AdminController extends BaseController
             'denoms' => $denomCounts,
             'total_remitted' => round($total, 2),
         ];
+    }
+
+    private function formatRemittanceAccountLabel(array $row): string
+    {
+        $name = trim((string) ($row['remittance_account_name'] ?? ''));
+        $number = trim((string) ($row['remittance_account_number'] ?? ''));
+
+        if ($name === '') {
+            return '-';
+        }
+
+        return $number !== '' ? $name . ' (' . $number . ')' : $name;
     }
 
     private function renderPdf(string $html, string $filename)
@@ -1448,17 +1942,215 @@ class AdminController extends BaseController
         return [$payrollMonth . '-16', $monthEnd, 'SECOND'];
     }
 
-    private function getFilteredHistoryRecords(
+    private function buildRiderQuery(string $search, string $status): RiderModel
+    {
+        $builder = (new RiderModel())
+            ->select('riders.*, users.username, users.is_active AS user_is_active')
+            ->join('users', 'users.rider_id = riders.id AND users.role = "rider"', 'left')
+            ->orderBy('name', 'ASC');
+
+        if ($search !== '') {
+            $builder
+                ->groupStart()
+                ->like('riders.name', $search)
+                ->orLike('riders.rider_code', $search)
+                ->orLike('users.username', $search)
+                ->groupEnd();
+        }
+
+        if ($status === 'ACTIVE') {
+            $builder->where('riders.is_active', 1);
+        } elseif ($status === 'INACTIVE') {
+            $builder->where('riders.is_active', 0);
+        }
+
+        return $builder;
+    }
+
+    private function buildDeliveryQuery(string $search, string $source, string $deliveryDate): DeliveryRecordModel
+    {
+        $builder = (new DeliveryRecordModel())
+            ->select('delivery_records.*, riders.name, riders.rider_code')
+            ->join('riders', 'riders.id = delivery_records.rider_id');
+
+        if ($search !== '') {
+            $builder->groupStart()
+                ->like('riders.name', $search)
+                ->orLike('riders.rider_code', $search)
+                ->groupEnd();
+        }
+
+        if (in_array($source, ['RIDER_SUBMISSION', 'ADMIN_MANUAL'], true)) {
+            $builder->where('delivery_records.entry_source', $source);
+        }
+
+        if ($deliveryDate !== '') {
+            $builder->where('delivery_records.delivery_date', $deliveryDate);
+        }
+
+        return $builder
+            ->orderBy('delivery_records.updated_at', 'DESC')
+            ->orderBy('delivery_records.delivery_date', 'DESC')
+            ->orderBy('delivery_records.id', 'DESC');
+    }
+
+    private function buildPayrollQuery(string $selectedRiderId, string $selectedPayrollMonth, string $selectedCutoff): PayrollModel
+    {
+        $builder = (new PayrollModel())
+            ->select('payrolls.*, riders.name, riders.rider_code')
+            ->join('riders', 'riders.id = payrolls.rider_id')
+            ->orderBy('end_date', 'DESC')
+            ->orderBy('payrolls.id', 'DESC');
+
+        if ($selectedRiderId !== '' && ctype_digit($selectedRiderId)) {
+            $builder->where('payrolls.rider_id', (int) $selectedRiderId);
+        }
+
+        if ($selectedPayrollMonth !== '' && in_array($selectedCutoff, ['FIRST', 'SECOND'], true)) {
+            [$filterStart, $filterEnd] = $this->getCutoffWindow($selectedPayrollMonth, $selectedCutoff);
+            $builder
+                ->where('payrolls.start_date', $filterStart)
+                ->where('payrolls.end_date', $filterEnd);
+        } elseif ($selectedPayrollMonth !== '') {
+            $builder
+                ->where('payrolls.start_date >=', $selectedPayrollMonth . '-01')
+                ->where('payrolls.start_date <=', date('Y-m-t', strtotime($selectedPayrollMonth . '-01')));
+        }
+
+        return $builder;
+    }
+
+    private function buildAdjustmentQuery(string $search, string $type, string $status, string $startDate, string $endDate): PayrollAdjustmentModel
+    {
+        $builder = (new PayrollAdjustmentModel())
+            ->select('payroll_adjustments.*, riders.name, riders.rider_code')
+            ->join('riders', 'riders.id = payroll_adjustments.rider_id');
+
+        if ($search !== '') {
+            $builder->groupStart()
+                ->like('riders.name', $search)
+                ->orLike('riders.rider_code', $search)
+                ->orLike('payroll_adjustments.description', $search)
+                ->orLike('payroll_adjustments.batch_reference', $search)
+                ->groupEnd();
+        }
+
+        if (in_array($type, ['BONUS', 'DEDUCTION'], true)) {
+            $builder->where('payroll_adjustments.type', $type);
+        }
+
+        if ($status === 'UNPAID') {
+            $builder->where('payroll_adjustments.payroll_id', null);
+        } elseif ($status === 'LOCKED') {
+            $builder->where('payroll_adjustments.payroll_id IS NOT NULL', null, false);
+        }
+
+        if ($startDate !== '') {
+            $builder->where('payroll_adjustments.adjustment_date >=', $startDate);
+        }
+
+        if ($endDate !== '') {
+            $builder->where('payroll_adjustments.adjustment_date <=', $endDate);
+        }
+
+        return $builder
+            ->orderBy('adjustment_date', 'DESC')
+            ->orderBy('payroll_adjustments.id', 'DESC');
+    }
+
+    private function buildAnnouncementQuery(string $search, string $status, string $startDate, string $endDate): AnnouncementModel
+    {
+        $builder = new AnnouncementModel();
+
+        if ($search !== '') {
+            $builder->groupStart()
+                ->like('title', $search)
+                ->orLike('message', $search)
+                ->groupEnd();
+        }
+
+        if ($status === 'ACTIVE') {
+            $builder->where('is_active', 1);
+        } elseif ($status === 'INACTIVE') {
+            $builder->where('is_active', 0);
+        }
+
+        if ($startDate !== '') {
+            $builder->where('DATE(published_at) >=', $startDate);
+        }
+
+        if ($endDate !== '') {
+            $builder->where('DATE(published_at) <=', $endDate);
+        }
+
+        return $builder
+            ->orderBy('published_at', 'DESC')
+            ->orderBy('id', 'DESC');
+    }
+
+    private function buildActivityQuery(string $search, string $role, string $startDate, string $endDate): DeliveryAuditLogModel
+    {
+        $builder = (new DeliveryAuditLogModel())
+            ->select('delivery_audit_logs.*, riders.name, riders.rider_code, users.username')
+            ->join('riders', 'riders.id = delivery_audit_logs.rider_id', 'left')
+            ->join('users', 'users.id = delivery_audit_logs.actor_user_id', 'left');
+
+        if ($search !== '') {
+            $builder->groupStart()
+                ->like('riders.name', $search)
+                ->orLike('riders.rider_code', $search)
+                ->orLike('users.username', $search)
+                ->orLike('delivery_audit_logs.action', $search)
+                ->orLike('delivery_audit_logs.notes', $search)
+                ->groupEnd();
+        }
+
+        if (in_array($role, ['admin', 'rider'], true)) {
+            $builder->where('delivery_audit_logs.actor_role', $role);
+        }
+
+        if ($startDate !== '') {
+            $builder->where('DATE(delivery_audit_logs.created_at) >=', $startDate);
+        }
+
+        if ($endDate !== '') {
+            $builder->where('DATE(delivery_audit_logs.created_at) <=', $endDate);
+        }
+
+        return $builder
+            ->orderBy('delivery_audit_logs.created_at', 'DESC')
+            ->orderBy('delivery_audit_logs.id', 'DESC');
+    }
+
+    private function buildCommissionRateHistoryQuery(string $search): RiderCommissionRateModel
+    {
+        $builder = (new RiderCommissionRateModel())
+            ->select('rider_commission_rates.*, riders.name, riders.rider_code')
+            ->join('riders', 'riders.id = rider_commission_rates.rider_id');
+
+        if ($search !== '') {
+            $builder->groupStart()
+                ->like('riders.name', $search)
+                ->orLike('riders.rider_code', $search)
+                ->groupEnd();
+        }
+
+        return $builder
+            ->orderBy('effective_date', 'DESC')
+            ->orderBy('rider_commission_rates.id', 'DESC');
+    }
+
+    private function buildHistoryQuery(
         string $search,
         string $startDate,
         string $endDate,
         string $riderId,
-        string $remittanceStatus,
-        int $limit = 100
-    ): array {
+        string $remittanceStatus
+    ): DeliveryRecordModel {
         $builder = (new DeliveryRecordModel())
-            ->select('delivery_records.*, riders.name, riders.rider_code, remittances.id AS remittance_id, remittances.variance_type, remittances.supposed_remittance, remittances.actual_remitted')
+            ->select('delivery_records.*, riders.name, riders.rider_code, remittances.id AS remittance_id, remittances.variance_type, remittances.supposed_remittance, remittances.actual_remitted, remittance_accounts.account_name AS remittance_account_name, remittance_accounts.account_number AS remittance_account_number')
             ->join('riders', 'riders.id = delivery_records.rider_id')
+            ->join('remittance_accounts', 'remittance_accounts.id = delivery_records.remittance_account_id', 'left')
             ->join('remittances', 'remittances.delivery_record_id = delivery_records.id', 'left');
 
         if ($search !== '') {
@@ -1487,9 +2179,72 @@ class AdminController extends BaseController
         }
 
         return $builder
+            ->orderBy('delivery_records.updated_at', 'DESC')
             ->orderBy('delivery_records.delivery_date', 'DESC')
-            ->orderBy('delivery_records.id', 'DESC')
-            ->findAll($limit);
+            ->orderBy('delivery_records.id', 'DESC');
+    }
+
+    private function buildCorrectionQuery(string $search, string $status, string $startDate, string $endDate): DeliveryCorrectionRequestModel
+    {
+        $builder = (new DeliveryCorrectionRequestModel())
+            ->select('delivery_correction_requests.*, delivery_records.delivery_date, delivery_records.payroll_id, riders.name, riders.rider_code')
+            ->join('delivery_records', 'delivery_records.id = delivery_correction_requests.delivery_record_id')
+            ->join('riders', 'riders.id = delivery_records.rider_id');
+
+        if ($search !== '') {
+            $builder->groupStart()
+                ->like('riders.name', $search)
+                ->orLike('riders.rider_code', $search)
+                ->orLike('delivery_correction_requests.reason', $search)
+                ->groupEnd();
+        }
+
+        if (in_array($status, ['PENDING', 'APPLIED', 'REJECTED'], true)) {
+            $builder->where('delivery_correction_requests.status', $status);
+        }
+
+        if ($startDate !== '') {
+            $builder->where('delivery_records.delivery_date >=', $startDate);
+        }
+
+        if ($endDate !== '') {
+            $builder->where('delivery_records.delivery_date <=', $endDate);
+        }
+
+        return $builder
+            ->orderBy('delivery_correction_requests.created_at', 'DESC')
+            ->orderBy('delivery_correction_requests.id', 'DESC');
+    }
+
+    private function paginateArray(array $items, int $perPage, string $pageName): array
+    {
+        $page = max(1, (int) ($this->request->getGet($pageName) ?: 1));
+        $total = count($items);
+        $offset = ($page - 1) * $perPage;
+
+        return [
+            'rows' => array_slice($items, $offset, $perPage),
+            'page' => $page,
+            'perPage' => $perPage,
+            'total' => $total,
+            'pageCount' => max(1, (int) ceil($total / $perPage)),
+            'pageName' => $pageName,
+        ];
+    }
+
+    private function logDeliveryAudit(DeliveryAuditLogModel $auditModel, array $data): void
+    {
+        $auditModel->insert([
+            'delivery_record_id' => $data['delivery_record_id'] ?? null,
+            'delivery_submission_id' => $data['delivery_submission_id'] ?? null,
+            'rider_id' => $data['rider_id'] ?? null,
+            'actor_user_id' => (int) session()->get('user_id') ?: null,
+            'actor_role' => (string) session()->get('role'),
+            'action' => (string) ($data['action'] ?? 'UNKNOWN'),
+            'notes' => $data['notes'] ?? null,
+            'details_json' => $data['details_json'] ?? null,
+            'created_at' => date('Y-m-d H:i:s'),
+        ]);
     }
 
     private function getShortageBalances(): array
@@ -1543,11 +2298,12 @@ class AdminController extends BaseController
     private function getPendingRemittances(): array
     {
         $pendingDeliveries = (new DeliveryRecordModel())
-            ->select('delivery_records.*, riders.name, riders.rider_code, remittances.id AS remittance_id, remittances.variance_type')
+            ->select('delivery_records.*, riders.name, riders.rider_code, remittance_accounts.account_name AS remittance_account_name, remittance_accounts.account_number AS remittance_account_number, remittances.id AS remittance_id, remittances.variance_type')
             ->join('riders', 'riders.id = delivery_records.rider_id')
+            ->join('remittance_accounts', 'remittance_accounts.id = delivery_records.remittance_account_id', 'left')
             ->join('remittances', 'remittances.delivery_record_id = delivery_records.id', 'left')
             ->groupStart()
-            ->where('remittances.id', null)
+                ->where('remittances.id', null)
             ->orWhere('remittances.variance_type', 'PENDING')
             ->groupEnd()
             ->orderBy('delivery_date', 'DESC')
@@ -1669,3 +2425,4 @@ class AdminController extends BaseController
         }));
     }
 }
+

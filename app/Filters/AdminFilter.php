@@ -14,6 +14,10 @@ class AdminFilter implements FilterInterface
             return redirect()->to('/login')->with('error', 'Please log in to continue.');
         }
 
+        if (session()->get('force_password_change')) {
+            return redirect()->to('/change-password')->with('error', 'You need to change your password before continuing.');
+        }
+
         if (session()->get('role') !== 'admin') {
             return redirect()->to('/rider-dashboard')->with('error', 'Admin access is required.');
         }

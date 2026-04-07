@@ -5,8 +5,38 @@
     <div>
         <h2 class="mb-0">Delivery Recording</h2>
         <p>Record one rider-day entry with parcel counts, the commission used for that area, salary earning basis, and that day's expected cash remittance.</p>
+        <div class="text-muted small">Correction requests are available inside each delivery record's detail page.</div>
     </div>
     <button class="btn btn-dark" data-bs-toggle="modal" data-bs-target="#deliveryModal">New Delivery Record</button>
+</div>
+
+<div class="card mb-3">
+    <div class="card-body">
+        <form method="get" action="<?= site_url('/admin/deliveries') ?>" class="row g-2 align-items-end">
+            <div class="col-md-5">
+                <label class="form-label">Search</label>
+                <input type="text" name="q" value="<?= esc($search ?? '') ?>" class="form-control" placeholder="Rider code or rider name">
+            </div>
+            <div class="col-md-3">
+                <label class="form-label">Source</label>
+                <select name="source" class="form-select">
+                    <option value="">All sources</option>
+                    <option value="RIDER_SUBMISSION" <?= ($source ?? '') === 'RIDER_SUBMISSION' ? 'selected' : '' ?>>Rider Submission</option>
+                    <option value="ADMIN_MANUAL" <?= ($source ?? '') === 'ADMIN_MANUAL' ? 'selected' : '' ?>>Admin Manual</option>
+                </select>
+            </div>
+            <div class="col-md-2">
+                <label class="form-label">Date</label>
+                <input type="date" name="delivery_date" value="<?= esc($deliveryDate ?? '') ?>" class="form-control">
+            </div>
+            <div class="col-md-1">
+                <button class="btn btn-primary w-100">Go</button>
+            </div>
+            <div class="col-md-1">
+                <a href="<?= site_url('/admin/deliveries') ?>" class="btn btn-outline-secondary w-100">Reset</a>
+            </div>
+        </form>
+    </div>
 </div>
 
 <div class="card">
@@ -17,10 +47,12 @@
                 <tr>
                     <th>Date</th>
                     <th>Rider</th>
+                    <th>Source</th>
                     <th>Successful</th>
                     <th>Commission</th>
                     <th>Salary Earning</th>
                     <th>Expected Remittance</th>
+                    <th>Last Activity</th>
                     <th></th>
                 </tr>
             </thead>
@@ -29,20 +61,35 @@
                     <tr>
                         <td><?= esc($record['delivery_date']) ?></td>
                         <td><?= esc($record['rider_code']) ?> - <?= esc($record['name']) ?></td>
+                        <td>
+                            <span class="badge text-bg-<?= ($record['entry_source'] ?? 'ADMIN_MANUAL') === 'RIDER_SUBMISSION' ? 'info' : 'secondary' ?>">
+                                <?= esc(($record['entry_source'] ?? 'ADMIN_MANUAL') === 'RIDER_SUBMISSION' ? 'Rider Submission' : 'Admin Manual') ?>
+                            </span>
+                        </td>
                         <td><?= (int) $record['successful_deliveries'] ?> / <?= (int) $record['allocated_parcels'] ?></td>
                         <td>PHP <?= number_format((float) ($record['commission_rate'] ?? 0), 2) ?></td>
                         <td>PHP <?= number_format((float) $record['total_due'], 2) ?></td>
                         <td>PHP <?= number_format((float) ($record['expected_remittance'] ?? 0), 2) ?></td>
-                        <td><a href="<?= site_url('/admin/remittance/' . (int) $record['id']) ?>" class="btn btn-sm btn-outline-primary">Collect</a></td>
+                        <td><?= esc($record['updated_at'] ?: $record['created_at'] ?: '-') ?></td>
+                        <td class="d-flex gap-2">
+                            <a href="<?= site_url('/admin/deliveries/' . (int) $record['id']) ?>" class="btn btn-sm btn-outline-dark">Details</a>
+                            <a href="<?= site_url('/admin/remittance/' . (int) $record['id']) ?>" class="btn btn-sm btn-outline-primary">Collect</a>
+                        </td>
                     </tr>
                 <?php endforeach; ?>
                 <?php if (empty($dailyRecords)): ?>
-                    <tr><td colspan="7" class="text-center text-muted py-4">No records yet.</td></tr>
+                    <tr><td colspan="9" class="text-center text-muted py-4">No delivery records matched the current filter.</td></tr>
                 <?php endif; ?>
             </tbody>
         </table>
     </div>
 </div>
+
+<?php if (! empty($pager)): ?>
+    <div class="mt-3">
+        <?= $pager->links($pageGroup) ?>
+    </div>
+<?php endif; ?>
 
 <div class="modal fade" id="deliveryModal" tabindex="-1" aria-hidden="true">
     <div class="modal-dialog modal-dialog-centered modal-lg">
@@ -93,6 +140,11 @@
                             <label class="form-label">Expected Remittance (PHP)</label>
                             <input type="number" step="0.01" min="0" name="expected_remittance" class="form-control" required>
                             <div class="form-text">Enter the rider's total cash collection for the day based on the parcels delivered in that area.</div>
+                        </div>
+                        <div class="col-12">
+                            <label class="form-label">Reason For Manual Admin Entry</label>
+                            <input type="text" name="admin_entry_reason" class="form-control" maxlength="255" required>
+                            <div class="form-text">Required for fallback encoding when the rider submission path was not used.</div>
                         </div>
                         <div class="col-12">
                             <label class="form-label">Notes</label>

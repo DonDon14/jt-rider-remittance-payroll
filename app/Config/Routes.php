@@ -9,6 +9,8 @@ $routes->get('/', 'Home::index');
 
 $routes->get('/login', 'AuthController::loginForm');
 $routes->post('/login', 'AuthController::login');
+$routes->get('/change-password', 'AuthController::changePasswordForm', ['filter' => 'auth']);
+$routes->post('/change-password', 'AuthController::updatePassword', ['filter' => 'auth']);
 $routes->get('/logout', 'AuthController::logout', ['filter' => 'auth']);
 
 $routes->group('admin', ['filter' => 'admin'], static function ($routes) {
@@ -16,6 +18,8 @@ $routes->group('admin', ['filter' => 'admin'], static function ($routes) {
     $routes->get('riders', 'AdminController::riders');
     $routes->get('deliveries', 'AdminController::deliveries');
     $routes->get('history', 'AdminController::deliveryHistory');
+    $routes->get('activity', 'AdminController::activity');
+    $routes->get('corrections', 'AdminController::corrections');
     $routes->get('deliveries/(:num)', 'AdminController::deliveryShow/$1');
     $routes->get('remittances', 'AdminController::remittances');
     $routes->get('shortages', 'AdminController::shortages');
@@ -30,6 +34,8 @@ $routes->group('admin', ['filter' => 'admin'], static function ($routes) {
     $routes->get('payroll/(:num)/pdf', 'AdminController::payrollPdf/$1');
     $routes->get('payroll/summary/pdf', 'AdminController::payrollSummaryPdf');
     $routes->get('history/export/csv', 'AdminController::deliveryHistoryCsv');
+    $routes->get('corrections/export/csv', 'AdminController::correctionsCsv');
+    $routes->get('adjustments/export/csv', 'AdminController::adjustmentsCsv');
 
     $routes->post('riders', 'AdminController::createRider');
     $routes->post('riders/(:num)', 'AdminController::updateRider/$1');
@@ -38,9 +44,14 @@ $routes->group('admin', ['filter' => 'admin'], static function ($routes) {
     $routes->post('announcements/(:num)', 'AdminController::updateAnnouncement/$1');
     $routes->post('adjustments', 'AdminController::storeAdjustment');
     $routes->post('settings/commission', 'AdminController::storeCommissionRate');
+    $routes->post('settings/remittance-accounts', 'AdminController::storeRemittanceAccount');
+    $routes->post('settings/remittance-accounts/(:num)', 'AdminController::updateRemittanceAccount/$1');
     $routes->post('deliveries', 'AdminController::storeDelivery');
     $routes->post('delivery-submissions/(:num)/approve', 'AdminController::approveDeliverySubmission/$1');
     $routes->post('delivery-submissions/(:num)/reject', 'AdminController::rejectDeliverySubmission/$1');
+    $routes->post('deliveries/(:num)/corrections', 'AdminController::storeDeliveryCorrectionRequest/$1');
+    $routes->post('delivery-corrections/(:num)/apply', 'AdminController::applyDeliveryCorrectionRequest/$1');
+    $routes->post('delivery-corrections/(:num)/reject', 'AdminController::rejectDeliveryCorrectionRequest/$1');
     $routes->post('remittance/(:num)', 'AdminController::saveRemittance/$1');
     $routes->post('shortages/(:num)/payment', 'AdminController::recordShortagePayment/$1');
     $routes->post('payroll/generate', 'AdminController::generatePayroll');

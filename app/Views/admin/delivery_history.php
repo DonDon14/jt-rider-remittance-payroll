@@ -5,6 +5,7 @@
     <div>
         <h2 class="mb-0">Delivery History</h2>
         <p>Search previous rider-day records and inspect both salary earning and cash remittance expectation.</p>
+        <div class="text-muted small">Rows are sorted by latest activity first, so newly added or corrected records appear at the top.</div>
     </div>
     <div class="d-flex gap-2">
         <a href="<?= site_url('/admin/history/export/csv?' . http_build_query(array_filter(['q' => $search, 'start_date' => $startDate, 'end_date' => $endDate, 'rider_id' => $selectedRiderId, 'remittance_status' => $remittanceStatus], static fn ($value) => $value !== ''))) ?>" class="btn btn-outline-dark">Export CSV</a>
@@ -73,10 +74,12 @@
                 <tr>
                     <th>Date</th>
                     <th>Rider</th>
+                    <th>Source</th>
                     <th>Successful</th>
                     <th>Salary Earning</th>
                     <th>Expected Remittance</th>
                     <th>Remittance</th>
+                    <th>Last Activity</th>
                     <th></th>
                 </tr>
             </thead>
@@ -85,19 +88,31 @@
                     <tr>
                         <td><?= esc($record['delivery_date']) ?></td>
                         <td><?= esc($record['rider_code']) ?> - <?= esc($record['name']) ?></td>
+                        <td>
+                            <span class="badge text-bg-<?= ($record['entry_source'] ?? 'ADMIN_MANUAL') === 'RIDER_SUBMISSION' ? 'info' : 'secondary' ?>">
+                                <?= esc(($record['entry_source'] ?? 'ADMIN_MANUAL') === 'RIDER_SUBMISSION' ? 'Rider Submission' : 'Admin Manual') ?>
+                            </span>
+                        </td>
                         <td><?= (int) $record['successful_deliveries'] ?></td>
                         <td>PHP <?= number_format((float) $record['total_due'], 2) ?></td>
                         <td>PHP <?= number_format((float) ($record['expected_remittance'] ?? 0), 2) ?></td>
                         <td><?= esc($record['variance_type'] ?? 'NOT RECORDED') ?></td>
-                        <td><a href="<?= site_url('/admin/deliveries/' . (int) $record['id']) ?>" class="btn btn-sm btn-outline-dark">View</a></td>
+                        <td><?= esc($record['updated_at'] ?: $record['created_at'] ?: '-') ?></td>
+                        <td><a href="<?= site_url('/admin/deliveries/' . (int) $record['id']) ?>" class="btn btn-sm btn-outline-dark">View / Correct</a></td>
                     </tr>
                 <?php endforeach; ?>
                 <?php if (empty($records)): ?>
-                    <tr><td colspan="7" class="text-center text-muted py-4">No delivery records matched the filters.</td></tr>
+                    <tr><td colspan="9" class="text-center text-muted py-4">No delivery records matched the filters.</td></tr>
                 <?php endif; ?>
             </tbody>
         </table>
     </div>
 </div>
+
+<?php if (! empty($pager)): ?>
+    <div class="mt-3">
+        <?= $pager->links($pageGroup) ?>
+    </div>
+<?php endif; ?>
 
 <?= $this->endSection() ?>

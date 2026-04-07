@@ -203,6 +203,7 @@
 
 
     const body = document.body;
+    const navGroups = Array.from(document.querySelectorAll('[data-nav-group]'));
     const applySidebarState = () => {
         if (!body.classList.contains('admin-shell')) {
             return;
@@ -212,6 +213,16 @@
         if (saved === '1' && window.innerWidth >= 992) {
             body.classList.add('is-sidebar-collapsed');
         }
+
+        navGroups.forEach((group) => {
+            const key = group.getAttribute('data-nav-group-key') || '';
+            const defaultOpen = group.getAttribute('data-default-open') === '1';
+            const savedState = key ? window.localStorage.getItem(`admin-nav-group-${key}`) : null;
+            const isOpen = savedState === null ? defaultOpen : savedState === '1';
+            group.classList.toggle('is-open', isOpen);
+            const button = group.querySelector('[data-nav-group-toggle]');
+            button?.setAttribute('aria-expanded', isOpen ? 'true' : 'false');
+        });
     };
 
     document.querySelectorAll('[data-sidebar-toggle]').forEach((button) => {
@@ -230,6 +241,27 @@
         });
     });
 
+
+    document.querySelectorAll('[data-nav-group-toggle]').forEach((button) => {
+        button.addEventListener('click', () => {
+            if (body.classList.contains('is-sidebar-collapsed') && window.innerWidth >= 992) {
+                return;
+            }
+
+            const group = button.closest('[data-nav-group]');
+            if (!group) {
+                return;
+            }
+
+            const isOpen = group.classList.toggle('is-open');
+            button.setAttribute('aria-expanded', isOpen ? 'true' : 'false');
+
+            const key = group.getAttribute('data-nav-group-key');
+            if (key) {
+                window.localStorage.setItem(`admin-nav-group-${key}`, isOpen ? '1' : '0');
+            }
+        });
+    });
     document.addEventListener('click', (event) => {
         if (window.innerWidth >= 992 || !body.classList.contains('admin-shell') || !body.classList.contains('is-sidebar-open')) {
             return;
@@ -264,5 +296,7 @@
         window.location.reload();
     });
 })();
+
+
 
 

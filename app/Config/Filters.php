@@ -35,25 +35,18 @@ class Filters extends BaseFilters
 
     public array $required = [
         'before' => [
-            'forcehttps',
-            'pagecache',
         ],
         'after' => [
-            'pagecache',
-            'performance',
-            'toolbar',
         ],
     ];
 
     public array $globals = [
         'before' => [
-            // 'honeypot',
-            // 'csrf',
-            // 'invalidchars',
+            'csrf',
+            'invalidchars',
         ],
         'after' => [
-            // 'honeypot',
-            // 'secureheaders',
+            'secureheaders',
         ],
     ];
 

@@ -4,27 +4,25 @@ namespace App\Models;
 
 use CodeIgniter\Model;
 
-class UserModel extends Model
+class DeliveryCorrectionRequestModel extends Model
 {
-    protected $table = 'users';
+    protected $table = 'delivery_correction_requests';
     protected $primaryKey = 'id';
     protected $returnType = 'array';
     protected $protectFields = true;
     protected $allowedFields = [
-        'username',
-        'password_hash',
-        'role',
-        'rider_id',
-        'is_active',
-        'force_password_change',
-        'last_seen_announcement_id',
+        'delivery_record_id',
+        'requested_by_user_id',
+        'status',
+        'reason',
+        'requested_payload_json',
+        'resolution_note',
+        'applied_at',
     ];
 
     protected array $casts = [
-        'rider_id' => '?integer',
-        'is_active' => 'boolean',
-        'force_password_change' => 'boolean',
-        'last_seen_announcement_id' => '?integer',
+        'delivery_record_id' => '?integer',
+        'requested_by_user_id' => '?integer',
     ];
 
     protected $useTimestamps = true;

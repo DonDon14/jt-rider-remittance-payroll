@@ -14,6 +14,14 @@ class AuthFilter implements FilterInterface
             return redirect()->to('/login')->with('error', 'Please log in to continue.');
         }
 
+        $path = trim($request->getUri()->getPath(), '/');
+        $path = preg_replace('#^index\.php/?#', '', $path) ?? $path;
+        $path = trim($path, '/');
+
+        if (session()->get('force_password_change') && ! in_array($path, ['change-password', 'logout'], true)) {
+            return redirect()->to('/change-password')->with('error', 'You need to change your password before continuing.');
+        }
+
         return null;
     }
 

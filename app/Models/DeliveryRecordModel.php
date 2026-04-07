@@ -17,9 +17,14 @@ class DeliveryRecordModel extends Model
         'successful_deliveries',
         'failed_deliveries',
         'expected_remittance',
+        'remittance_account_id',
         'commission_rate',
         'total_due',
         'notes',
+        'entry_source',
+        'source_submission_id',
+        'created_by_user_id',
+        'last_admin_reason',
         'payroll_id',
     ];
 
@@ -29,8 +34,11 @@ class DeliveryRecordModel extends Model
         'successful_deliveries' => '?integer',
         'failed_deliveries' => '?integer',
         'expected_remittance' => '?float',
+        'remittance_account_id' => '?integer',
         'commission_rate' => '?float',
         'total_due' => '?float',
+        'source_submission_id' => '?integer',
+        'created_by_user_id' => '?integer',
         'payroll_id' => '?integer',
     ];
 

@@ -4,27 +4,23 @@ namespace App\Models;
 
 use CodeIgniter\Model;
 
-class UserModel extends Model
+class RemittanceAccountModel extends Model
 {
-    protected $table = 'users';
+    protected $table = 'remittance_accounts';
     protected $primaryKey = 'id';
     protected $returnType = 'array';
     protected $protectFields = true;
     protected $allowedFields = [
-        'username',
-        'password_hash',
-        'role',
-        'rider_id',
+        'account_name',
+        'account_number',
+        'description',
+        'sort_order',
         'is_active',
-        'force_password_change',
-        'last_seen_announcement_id',
     ];
 
     protected array $casts = [
-        'rider_id' => '?integer',
+        'sort_order' => '?integer',
         'is_active' => 'boolean',
-        'force_password_change' => 'boolean',
-        'last_seen_announcement_id' => '?integer',
     ];
 
     protected $useTimestamps = true;

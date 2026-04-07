@@ -139,6 +139,12 @@
     </div>
 </div>
 
+<?php if (! empty($pager)): ?>
+    <div class="mt-3">
+        <?= $pager->links($pageGroup) ?>
+    </div>
+<?php endif; ?>
+
 <div class="modal fade" id="payrollGenerateModal" tabindex="-1" aria-hidden="true">
     <div class="modal-dialog modal-dialog-centered">
         <div class="modal-content">
@@ -180,3 +186,4 @@
 </div>
 
 <?= $this->endSection() ?>
+

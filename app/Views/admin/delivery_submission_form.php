@@ -24,6 +24,7 @@
             <div class="col-md-2"><strong>Allocated:</strong> <?= (int) $submission['allocated_parcels'] ?></div>
             <div class="col-md-2"><strong>Successful:</strong> <?= (int) $submission['successful_deliveries'] ?></div>
             <div class="col-md-2"><strong>Expected Remittance:</strong> PHP <?= number_format((float) ($submission['expected_remittance'] ?? 0), 2) ?></div>
+            <div class="col-12"><strong>Remittance Account:</strong> <?= esc(trim((string) ($submission['remittance_account_name'] ?? '')) !== '' ? (($submission['remittance_account_name'] ?? '') . (! empty($submission['remittance_account_number']) ? ' (' . $submission['remittance_account_number'] . ')' : '')) : '-') ?></div>
         </div>
     </div>
 </div>
@@ -55,3 +56,4 @@
 </div>
 
 <?= $this->endSection() ?>
+

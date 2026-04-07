@@ -4,7 +4,113 @@
 <div class="page-hero">
     <div>
         <h2 class="mb-0">Settings</h2>
-        <p>Manage rider commission rates with effective dates so historical delivery records keep the correct rate.</p>
+        <p>Manage rider commission rates and the remittance accounts riders can select during the collection request process.</p>
+    </div>
+</div>
+
+<div class="row g-3 mb-3">
+    <div class="col-lg-5">
+        <div class="card h-100">
+            <div class="card-header fw-semibold">Add Remittance Account</div>
+            <div class="card-body">
+                <form method="post" action="<?= site_url('/admin/settings/remittance-accounts') ?>">
+                    <?= csrf_field() ?>
+                    <div class="mb-3">
+                        <label class="form-label">Account Name</label>
+                        <input type="text" name="account_name" class="form-control" maxlength="120" required>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Account Number / Reference</label>
+                        <input type="text" name="account_number" class="form-control" maxlength="80">
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Description</label>
+                        <input type="text" name="description" class="form-control" maxlength="255" placeholder="Optional branch note or account owner.">
+                    </div>
+                    <div class="row g-2">
+                        <div class="col-md-6">
+                            <label class="form-label">Sort Order</label>
+                            <input type="number" name="sort_order" min="0" class="form-control" value="0">
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label">Status</label>
+                            <select name="is_active" class="form-select" required>
+                                <option value="1">Active</option>
+                                <option value="0">Inactive</option>
+                            </select>
+                        </div>
+                    </div>
+                    <button class="btn btn-dark w-100 mt-3">Save Remittance Account</button>
+                </form>
+            </div>
+        </div>
+    </div>
+    <div class="col-lg-7">
+        <div class="card h-100">
+            <div class="card-header fw-semibold">Remittance Accounts</div>
+            <div class="card-body p-0">
+                <div class="table-responsive">
+                    <table class="table table-hover mb-0">
+                        <thead>
+                            <tr>
+                                <th>Account</th>
+                                <th>Details</th>
+                                <th>Status</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <?php foreach ($remittanceAccounts as $account): ?>
+                                <tr>
+                                    <td>
+                                        <div class="fw-semibold"><?= esc($account['account_name']) ?></div>
+                                        <div class="small text-muted">Sort: <?= (int) ($account['sort_order'] ?? 0) ?></div>
+                                    </td>
+                                    <td>
+                                        <form method="post" action="<?= site_url('/admin/settings/remittance-accounts/' . (int) $account['id']) ?>" class="row g-2 align-items-end">
+                                            <?= csrf_field() ?>
+                                            <div class="col-md-6">
+                                                <label class="form-label small">Account Number / Reference</label>
+                                                <input type="text" name="account_number" class="form-control form-control-sm" value="<?= esc((string) ($account['account_number'] ?? '')) ?>" maxlength="80">
+                                            </div>
+                                            <div class="col-md-6">
+                                                <label class="form-label small">Account Name</label>
+                                                <input type="text" name="account_name" class="form-control form-control-sm" value="<?= esc((string) ($account['account_name'] ?? '')) ?>" maxlength="120" required>
+                                            </div>
+                                            <div class="col-md-6">
+                                                <label class="form-label small">Description</label>
+                                                <input type="text" name="description" class="form-control form-control-sm" value="<?= esc((string) ($account['description'] ?? '')) ?>" maxlength="255">
+                                            </div>
+                                            <div class="col-md-2">
+                                                <label class="form-label small">Sort</label>
+                                                <input type="number" name="sort_order" min="0" class="form-control form-control-sm" value="<?= (int) ($account['sort_order'] ?? 0) ?>">
+                                            </div>
+                                            <div class="col-md-2">
+                                                <label class="form-label small">Status</label>
+                                                <select name="is_active" class="form-select form-select-sm" required>
+                                                    <option value="1" <?= ! empty($account['is_active']) ? 'selected' : '' ?>>Active</option>
+                                                    <option value="0" <?= empty($account['is_active']) ? 'selected' : '' ?>>Inactive</option>
+                                                </select>
+                                            </div>
+                                            <div class="col-md-2">
+                                                <button class="btn btn-outline-dark btn-sm w-100">Update</button>
+                                            </div>
+                                        </form>
+                                    </td>
+                                    <td>
+                                        <span class="badge text-bg-<?= ! empty($account['is_active']) ? 'success' : 'secondary' ?>">
+                                            <?= ! empty($account['is_active']) ? 'Active' : 'Inactive' ?>
+                                        </span>
+                                    </td>
+                                </tr>
+                            <?php endforeach; ?>
+                            <?php if (empty($remittanceAccounts)): ?>
+                                <tr><td colspan="3" class="text-center text-muted py-4">No remittance accounts configured yet.</td></tr>
+                            <?php endif; ?>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
     </div>
 </div>
 
@@ -63,8 +169,22 @@
                 </table>
             </div>
         </div>
-        <div class="card">
+        <div class="card mb-3">
             <div class="card-header fw-semibold">Commission Change History</div>
+            <div class="card-body border-bottom">
+                <form method="get" action="<?= site_url('/admin/settings') ?>" class="row g-2 align-items-end">
+                    <div class="col-md-10">
+                        <label class="form-label">Search</label>
+                        <input type="text" name="q" value="<?= esc($historySearch ?? '') ?>" class="form-control" placeholder="Search rider code or name">
+                    </div>
+                    <div class="col-md-1">
+                        <button class="btn btn-primary w-100">Go</button>
+                    </div>
+                    <div class="col-md-1">
+                        <a href="<?= site_url('/admin/settings') ?>" class="btn btn-outline-secondary w-100">Reset</a>
+                    </div>
+                </form>
+            </div>
             <div class="table-responsive">
                 <table class="table table-hover mb-0">
                     <thead>
@@ -83,13 +203,19 @@
                             </tr>
                         <?php endforeach; ?>
                         <?php if (empty($rateHistory)): ?>
-                            <tr><td colspan="3" class="text-center text-muted py-4">No commission history yet.</td></tr>
+                            <tr><td colspan="3" class="text-center text-muted py-4">No commission history matched the current filter.</td></tr>
                         <?php endif; ?>
                     </tbody>
                 </table>
             </div>
         </div>
+        <?php if (! empty($pager)): ?>
+            <div class="mt-3">
+                <?= $pager->links($pageGroup) ?>
+            </div>
+        <?php endif; ?>
     </div>
 </div>
 
 <?= $this->endSection() ?>
+

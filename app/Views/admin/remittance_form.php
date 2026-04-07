@@ -23,6 +23,7 @@
             <div class="col-md-3"><strong>Date:</strong> <?= esc($delivery['delivery_date']) ?></div>
             <div class="col-md-3"><strong>Expected Remittance:</strong> PHP <?= number_format((float) ($delivery['expected_remittance'] ?? 0), 2) ?></div>
             <div class="col-md-3"><strong>Salary Earning:</strong> PHP <?= number_format((float) $delivery['total_due'], 2) ?></div>
+            <div class="col-12"><strong>Selected Remittance Account:</strong> <?= esc(trim((string) ($delivery['remittance_account_name'] ?? '')) !== '' ? (($delivery['remittance_account_name'] ?? '') . (! empty($delivery['remittance_account_number']) ? ' (' . $delivery['remittance_account_number'] . ')' : '')) : '-') ?></div>
         </div>
     </div>
 </div>
@@ -68,3 +69,4 @@
 </div>
 
 <?= $this->endSection() ?>
+

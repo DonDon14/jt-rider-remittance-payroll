@@ -9,6 +9,39 @@
     <button class="btn btn-dark" data-bs-toggle="modal" data-bs-target="#addAnnouncementModal">New Announcement</button>
 </div>
 
+<div class="card mb-3">
+    <div class="card-body">
+        <form method="get" action="<?= site_url('/admin/announcements') ?>" class="row g-2 align-items-end">
+            <div class="col-md-5">
+                <label class="form-label">Search</label>
+                <input type="text" name="q" value="<?= esc($search ?? '') ?>" class="form-control" placeholder="Title or message">
+            </div>
+            <div class="col-md-2">
+                <label class="form-label">Status</label>
+                <select name="status" class="form-select">
+                    <option value="">All statuses</option>
+                    <option value="ACTIVE" <?= ($status ?? '') === 'ACTIVE' ? 'selected' : '' ?>>Active</option>
+                    <option value="INACTIVE" <?= ($status ?? '') === 'INACTIVE' ? 'selected' : '' ?>>Inactive</option>
+                </select>
+            </div>
+            <div class="col-md-2">
+                <label class="form-label">Start Date</label>
+                <input type="date" name="start_date" value="<?= esc($startDate ?? '') ?>" class="form-control">
+            </div>
+            <div class="col-md-2">
+                <label class="form-label">End Date</label>
+                <input type="date" name="end_date" value="<?= esc($endDate ?? '') ?>" class="form-control">
+            </div>
+            <div class="col-md-1">
+                <button class="btn btn-primary w-100">Go</button>
+            </div>
+            <div class="col-md-1">
+                <a href="<?= site_url('/admin/announcements') ?>" class="btn btn-outline-secondary w-100">Reset</a>
+            </div>
+        </form>
+    </div>
+</div>
+
 <div class="card">
     <div class="card-header fw-semibold">Announcement Board</div>
     <div class="table-responsive">
@@ -35,12 +68,18 @@
                     </tr>
                 <?php endforeach; ?>
                 <?php if (empty($announcements)): ?>
-                    <tr><td colspan="6" class="text-center text-muted py-4">No announcements yet.</td></tr>
+                    <tr><td colspan="6" class="text-center text-muted py-4">No announcements matched the current filter.</td></tr>
                 <?php endif; ?>
             </tbody>
         </table>
     </div>
 </div>
+
+<?php if (! empty($pager)): ?>
+    <div class="mt-3">
+        <?= $pager->links($pageGroup) ?>
+    </div>
+<?php endif; ?>
 
 <div class="modal fade" id="addAnnouncementModal" tabindex="-1" aria-hidden="true">
     <div class="modal-dialog modal-dialog-centered">
@@ -52,30 +91,11 @@
             <div class="modal-body">
                 <form method="post" action="<?= site_url('/admin/announcements') ?>">
                     <?= csrf_field() ?>
-                    <div class="mb-2">
-                        <label class="form-label">Title</label>
-                        <input type="text" name="title" class="form-control" required maxlength="150">
-                    </div>
-                    <div class="mb-2">
-                        <label class="form-label">Message</label>
-                        <textarea name="message" class="form-control" rows="4" required></textarea>
-                    </div>
-                    <div class="mb-2">
-                        <label class="form-label">Publish Date</label>
-                        <input type="date" name="published_at" class="form-control" value="<?= esc($today) ?>" required>
-                    </div>
-                    <div class="mb-2">
-                        <label class="form-label">Expiry Date</label>
-                        <input type="date" name="expires_at" class="form-control">
-                        <div class="form-text">Leave blank if the announcement should stay visible until manually disabled.</div>
-                    </div>
-                    <div class="mb-3">
-                        <label class="form-label">Status</label>
-                        <select name="is_active" class="form-select" required>
-                            <option value="1">Active</option>
-                            <option value="0">Inactive</option>
-                        </select>
-                    </div>
+                    <div class="mb-2"><label class="form-label">Title</label><input type="text" name="title" class="form-control" required maxlength="150"></div>
+                    <div class="mb-2"><label class="form-label">Message</label><textarea name="message" class="form-control" rows="4" required></textarea></div>
+                    <div class="mb-2"><label class="form-label">Publish Date</label><input type="date" name="published_at" class="form-control" value="<?= esc($today) ?>" required></div>
+                    <div class="mb-2"><label class="form-label">Expiry Date</label><input type="date" name="expires_at" class="form-control"><div class="form-text">Leave blank if the announcement should stay visible until manually disabled.</div></div>
+                    <div class="mb-3"><label class="form-label">Status</label><select name="is_active" class="form-select" required><option value="1">Active</option><option value="0">Inactive</option></select></div>
                     <button class="btn btn-dark w-100">Publish Announcement</button>
                 </form>
             </div>
@@ -94,29 +114,11 @@
                 <div class="modal-body">
                     <form method="post" action="<?= site_url('/admin/announcements/' . (int) $announcement['id']) ?>">
                         <?= csrf_field() ?>
-                        <div class="mb-2">
-                            <label class="form-label">Title</label>
-                            <input type="text" name="title" class="form-control" value="<?= esc($announcement['title']) ?>" required maxlength="150">
-                        </div>
-                        <div class="mb-2">
-                            <label class="form-label">Message</label>
-                            <textarea name="message" class="form-control" rows="4" required><?= esc($announcement['message']) ?></textarea>
-                        </div>
-                        <div class="mb-2">
-                            <label class="form-label">Publish Date</label>
-                            <input type="date" name="published_at" class="form-control" value="<?= esc(date('Y-m-d', strtotime((string) $announcement['published_at']))) ?>" required>
-                        </div>
-                        <div class="mb-2">
-                            <label class="form-label">Expiry Date</label>
-                            <input type="date" name="expires_at" class="form-control" value="<?= ! empty($announcement['expires_at']) ? esc(date('Y-m-d', strtotime((string) $announcement['expires_at']))) : '' ?>">
-                        </div>
-                        <div class="mb-3">
-                            <label class="form-label">Status</label>
-                            <select name="is_active" class="form-select" required>
-                                <option value="1" <?= ! empty($announcement['is_active']) ? 'selected' : '' ?>>Active</option>
-                                <option value="0" <?= empty($announcement['is_active']) ? 'selected' : '' ?>>Inactive</option>
-                            </select>
-                        </div>
+                        <div class="mb-2"><label class="form-label">Title</label><input type="text" name="title" class="form-control" value="<?= esc($announcement['title']) ?>" required maxlength="150"></div>
+                        <div class="mb-2"><label class="form-label">Message</label><textarea name="message" class="form-control" rows="4" required><?= esc($announcement['message']) ?></textarea></div>
+                        <div class="mb-2"><label class="form-label">Publish Date</label><input type="date" name="published_at" class="form-control" value="<?= esc(date('Y-m-d', strtotime((string) $announcement['published_at']))) ?>" required></div>
+                        <div class="mb-2"><label class="form-label">Expiry Date</label><input type="date" name="expires_at" class="form-control" value="<?= ! empty($announcement['expires_at']) ? esc(date('Y-m-d', strtotime((string) $announcement['expires_at']))) : '' ?>"></div>
+                        <div class="mb-3"><label class="form-label">Status</label><select name="is_active" class="form-select" required><option value="1" <?= ! empty($announcement['is_active']) ? 'selected' : '' ?>>Active</option><option value="0" <?= empty($announcement['is_active']) ? 'selected' : '' ?>>Inactive</option></select></div>
                         <button class="btn btn-dark w-100">Save Changes</button>
                     </form>
                 </div>
