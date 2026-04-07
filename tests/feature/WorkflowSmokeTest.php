@@ -294,7 +294,86 @@ final class WorkflowSmokeTest extends CIUnitTestCase
         $this->assertSame(16, (int) $payroll['total_successful']);
         $this->assertSame(212.0, (float) $payroll['gross_earnings']);
         $this->assertSame(212.0, (float) $payroll['net_pay']);
+        $this->assertSame('GENERATED', $payroll['payroll_status']);
         $this->assertSame((int) $payroll['id'], (int) $delivery['payroll_id']);
+    }
+
+    public function testPayrollReleaseAndRiderConfirmationUpdatePayoutStatus(): void
+    {
+        $db = db_connect();
+        $now = date('Y-m-d H:i:s');
+
+        $db->table('payrolls')->insert([
+            'id' => 1,
+            'rider_id' => 3,
+            'month_year' => '2026-04-01',
+            'start_date' => '2026-04-01',
+            'end_date' => '2026-04-15',
+            'total_successful' => 16,
+            'gross_earnings' => 212.00,
+            'total_due' => 212.00,
+            'total_remitted' => 2100.00,
+            'remittance_variance' => 0.00,
+            'shortage_deductions' => 0.00,
+            'shortage_payments_received' => 0.00,
+            'bonus_total' => 0.00,
+            'deduction_total' => 0.00,
+            'outstanding_shortage_balance' => 0.00,
+            'net_pay' => 212.00,
+            'payroll_status' => 'GENERATED',
+            'created_at' => $now,
+            'updated_at' => $now,
+        ]);
+
+        $security = service('security');
+        $tokenName = $security->getTokenName();
+        $tokenHash = $security->generateHash();
+
+        $releaseResult = $this->withSession([
+            'isLoggedIn' => true,
+            'role' => 'admin',
+            'user_id' => 1,
+            'force_password_change' => false,
+            'username' => 'admin',
+        ])->post('/admin/payroll/1/release', [
+            $tokenName => $tokenHash,
+            'payout_method' => 'BANK_TRANSFER',
+            'payout_reference' => 'TRX-20260415',
+        ]);
+
+        $releaseResult->assertRedirect();
+        $releaseResult->assertRedirectTo(site_url('/admin/payroll'));
+
+        $releasedPayroll = $db->table('payrolls')->where('id', 1)->get()->getRowArray();
+
+        $this->assertNotNull($releasedPayroll);
+        $this->assertSame('RELEASED', $releasedPayroll['payroll_status']);
+        $this->assertSame('BANK_TRANSFER', $releasedPayroll['payout_method']);
+        $this->assertSame('TRX-20260415', $releasedPayroll['payout_reference']);
+        $this->assertNotEmpty($releasedPayroll['released_at']);
+        $this->assertSame(1, (int) $releasedPayroll['released_by_user_id']);
+
+        $tokenHash = $security->generateHash();
+        $confirmResult = $this->withSession([
+            'isLoggedIn' => true,
+            'role' => 'rider',
+            'user_id' => 2,
+            'rider_id' => 3,
+            'force_password_change' => false,
+            'username' => 'r-1003',
+        ])->post('/rider/payroll/1/confirm', [
+            $tokenName => $tokenHash,
+            'received_notes' => 'Salary received in full.',
+        ]);
+
+        $confirmResult->assertRedirect();
+        $confirmResult->assertRedirectTo(site_url('/rider-dashboard'));
+
+        $confirmedPayroll = $db->table('payrolls')->where('id', 1)->get()->getRowArray();
+
+        $this->assertSame('RECEIVED', $confirmedPayroll['payroll_status']);
+        $this->assertNotEmpty($confirmedPayroll['received_at']);
+        $this->assertSame('Salary received in full.', $confirmedPayroll['received_notes']);
     }
 
     public function testAdminResetRiderPasswordGeneratesNonPredictableTemporaryPassword(): void
@@ -463,6 +542,13 @@ final class WorkflowSmokeTest extends CIUnitTestCase
             deduction_total REAL NOT NULL DEFAULT 0,
             outstanding_shortage_balance REAL NOT NULL DEFAULT 0,
             net_pay REAL NOT NULL DEFAULT 0,
+            payroll_status VARCHAR(20) NOT NULL DEFAULT "GENERATED",
+            payout_method VARCHAR(30) NULL,
+            payout_reference VARCHAR(100) NULL,
+            released_at DATETIME NULL,
+            released_by_user_id INTEGER NULL,
+            received_at DATETIME NULL,
+            received_notes TEXT NULL,
             created_at DATETIME NULL,
             updated_at DATETIME NULL
         )');
@@ -574,4 +660,6 @@ final class WorkflowSmokeTest extends CIUnitTestCase
         ]);
     }
 }
+
+
 

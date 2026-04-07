@@ -55,10 +55,12 @@ $routes->group('admin', ['filter' => 'admin'], static function ($routes) {
     $routes->post('remittance/(:num)', 'AdminController::saveRemittance/$1');
     $routes->post('shortages/(:num)/payment', 'AdminController::recordShortagePayment/$1');
     $routes->post('payroll/generate', 'AdminController::generatePayroll');
+    $routes->post('payroll/(:num)/release', 'AdminController::releasePayroll/$1');
     $routes->post('payroll/(:num)/reopen', 'AdminController::reopenPayroll/$1');
 });
 
 $routes->get('/rider-dashboard', 'RiderController::ownDashboard', ['filter' => 'rider']);
 $routes->get('/rider/(:num)', 'RiderController::dashboard/$1', ['filter' => 'rider']);
 $routes->post('/rider/delivery-submissions', 'RiderController::storeDeliverySubmission', ['filter' => 'rider']);
+$routes->post('/rider/payroll/(:num)/confirm', 'RiderController::confirmPayrollReceipt/$1', ['filter' => 'rider']);
 $routes->post('/rider/announcements/(:num)/read', 'RiderController::markAnnouncementRead/$1', ['filter' => 'rider']);

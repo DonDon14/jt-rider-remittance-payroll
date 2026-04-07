@@ -143,10 +143,34 @@ $formatAccountLabel = static function (array $row): string {
             <div class="card-header fw-semibold">Recent Payroll History</div>
             <div class="list-group list-group-flush">
                 <?php foreach ($payrollHistory as $payroll): ?>
+                    <?php $payrollStatus = (string) ($payroll['payroll_status'] ?? 'GENERATED'); ?>
                     <div class="list-group-item">
-                        <div class="fw-semibold"><?= esc($payroll['start_date'] ?? $payroll['month_year']) ?> to <?= esc($payroll['end_date'] ?? $payroll['month_year']) ?></div>
-                        <div class="small text-muted">Net Pay: PHP <?= number_format((float) $payroll['net_pay'], 2) ?></div>
-                        <div class="small text-muted">Outstanding Shortage: PHP <?= number_format((float) ($payroll['outstanding_shortage_balance'] ?? 0), 2) ?></div>
+                        <div class="d-flex justify-content-between align-items-start gap-2">
+                            <div>
+                                <div class="fw-semibold"><?= esc($payroll['start_date'] ?? $payroll['month_year']) ?> to <?= esc($payroll['end_date'] ?? $payroll['month_year']) ?></div>
+                                <div class="small text-muted">Net Pay: PHP <?= number_format((float) $payroll['net_pay'], 2) ?></div>
+                                <div class="small text-muted">Outstanding Shortage: PHP <?= number_format((float) ($payroll['outstanding_shortage_balance'] ?? 0), 2) ?></div>
+                                <?php if (! empty($payroll['payout_method'])): ?>
+                                    <div class="small text-muted">Payout Method: <?= esc(str_replace('_', ' ', (string) $payroll['payout_method'])) ?></div>
+                                <?php endif; ?>
+                                <?php if (! empty($payroll['released_at'])): ?>
+                                    <div class="small text-muted">Released: <?= esc($payroll['released_at']) ?></div>
+                                <?php endif; ?>
+                                <?php if (! empty($payroll['received_at'])): ?>
+                                    <div class="small text-muted">Received: <?= esc($payroll['received_at']) ?></div>
+                                <?php endif; ?>
+                            </div>
+                            <span class="badge <?= $payrollStatus === 'RECEIVED' ? 'badge-over' : ($payrollStatus === 'RELEASED' ? 'badge-balanced' : 'badge-short') ?>"><?= esc($payrollStatus) ?></span>
+                        </div>
+                        <?php if ($payrollStatus === 'RELEASED'): ?>
+                            <form method="post" action="<?= site_url('/rider/payroll/' . (int) $payroll['id'] . '/confirm') ?>" class="mt-3">
+                                <?= csrf_field() ?>
+                                <div class="mb-2">
+                                    <textarea name="received_notes" class="form-control form-control-sm" rows="2" maxlength="500" placeholder="Optional note about receiving this salary."></textarea>
+                                </div>
+                                <button class="btn btn-sm btn-dark" onclick="return confirm('Confirm that you have received this payroll amount?');">Confirm Salary Received</button>
+                            </form>
+                        <?php endif; ?>
                     </div>
                 <?php endforeach; ?>
                 <?php if (empty($payrollHistory)): ?>
@@ -255,5 +279,3 @@ document.addEventListener('DOMContentLoaded', () => {
 </script>
 <?php endif; ?>
 <?= $this->endSection() ?>
-
-

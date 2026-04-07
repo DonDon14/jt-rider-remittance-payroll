@@ -26,6 +26,13 @@ class PayrollModel extends Model
         'deduction_total',
         'outstanding_shortage_balance',
         'net_pay',
+        'payroll_status',
+        'payout_method',
+        'payout_reference',
+        'released_at',
+        'released_by_user_id',
+        'received_at',
+        'received_notes',
     ];
 
     protected array $casts = [
@@ -41,6 +48,7 @@ class PayrollModel extends Model
         'deduction_total' => '?float',
         'outstanding_shortage_balance' => '?float',
         'net_pay' => '?float',
+        'released_by_user_id' => '?integer',
     ];
 
     protected $useTimestamps = true;

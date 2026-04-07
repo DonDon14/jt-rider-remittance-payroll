@@ -98,6 +98,7 @@
                         <tr>
                             <th>Date Range</th>
                             <th>Rider</th>
+                            <th>Status</th>
                             <th>Successful</th>
                             <th>Bonus</th>
                             <th>Deduction</th>
@@ -109,9 +110,21 @@
                     </thead>
                     <tbody>
                         <?php foreach ($payrolls as $item): ?>
+                            <?php $status = (string) ($item['payroll_status'] ?? 'GENERATED'); ?>
                             <tr>
                                 <td><?= esc($item['start_date'] ?? $item['month_year']) ?> to <?= esc($item['end_date'] ?? $item['month_year']) ?></td>
                                 <td><?= esc($item['rider_code']) ?> - <?= esc($item['name']) ?></td>
+                                <td>
+                                    <span class="badge <?= $status === 'RECEIVED' ? 'badge-over' : ($status === 'RELEASED' ? 'badge-balanced' : 'badge-short') ?>">
+                                        <?= esc($status) ?>
+                                    </span>
+                                    <?php if (! empty($item['released_at'])): ?>
+                                        <div class="small text-muted mt-1">Released <?= esc($item['released_at']) ?></div>
+                                    <?php endif; ?>
+                                    <?php if (! empty($item['received_at'])): ?>
+                                        <div class="small text-muted">Received <?= esc($item['received_at']) ?></div>
+                                    <?php endif; ?>
+                                </td>
                                 <td><?= (int) $item['total_successful'] ?></td>
                                 <td>PHP <?= number_format((float) ($item['bonus_total'] ?? 0), 2) ?></td>
                                 <td>PHP <?= number_format((float) ($item['deduction_total'] ?? 0), 2) ?></td>
@@ -119,8 +132,23 @@
                                 <td>PHP <?= number_format((float) ($item['shortage_payments_received'] ?? 0), 2) ?></td>
                                 <td>PHP <?= number_format((float) $item['net_pay'], 2) ?></td>
                                 <td>
-                                    <div class="d-flex gap-2">
+                                    <div class="d-flex gap-2 flex-wrap">
                                         <a href="<?= site_url('/admin/payroll/' . (int) $item['id'] . '/pdf') ?>" target="_blank" class="btn btn-sm btn-outline-dark">Payslip</a>
+                                        <?php if ($status !== 'RECEIVED'): ?>
+                                            <button
+                                                type="button"
+                                                class="btn btn-sm btn-outline-primary"
+                                                data-bs-toggle="modal"
+                                                data-bs-target="#releasePayrollModal"
+                                                data-payroll-id="<?= (int) $item['id'] ?>"
+                                                data-rider-label="<?= esc($item['rider_code'] . ' - ' . $item['name'], 'attr') ?>"
+                                                data-payroll-range="<?= esc(($item['start_date'] ?? $item['month_year']) . ' to ' . ($item['end_date'] ?? $item['month_year']), 'attr') ?>"
+                                                data-payout-method="<?= esc((string) ($item['payout_method'] ?? ''), 'attr') ?>"
+                                                data-payout-reference="<?= esc((string) ($item['payout_reference'] ?? ''), 'attr') ?>"
+                                            >
+                                                <?= $status === 'RELEASED' ? 'Update Release' : 'Release Salary' ?>
+                                            </button>
+                                        <?php endif; ?>
                                         <form method="post" action="<?= site_url('/admin/payroll/' . (int) $item['id'] . '/reopen') ?>" onsubmit="return confirm('Reopen this payroll? This will release the locked delivery days, adjustments, and shortage payments so the payroll can be regenerated.');">
                                             <?= csrf_field() ?>
                                             <button class="btn btn-sm btn-outline-danger">Reopen</button>
@@ -130,7 +158,7 @@
                             </tr>
                         <?php endforeach; ?>
                         <?php if (empty($payrolls)): ?>
-                            <tr><td colspan="9" class="text-center text-muted py-4">No payroll runs matched the current filter.</td></tr>
+                            <tr><td colspan="10" class="text-center text-muted py-4">No payroll runs matched the current filter.</td></tr>
                         <?php endif; ?>
                     </tbody>
                 </table>
@@ -185,5 +213,70 @@
     </div>
 </div>
 
+<div class="modal fade" id="releasePayrollModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Release Salary</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <div class="small text-muted mb-3" data-release-summary>Select a payroll run to release.</div>
+                <form method="post" action="<?= site_url('/admin/payroll/0/release') ?>" id="releasePayrollForm">
+                    <?= csrf_field() ?>
+                    <div class="mb-3">
+                        <label class="form-label">Payout Method</label>
+                        <select name="payout_method" class="form-select" required>
+                            <option value="">Select payout method</option>
+                            <option value="CASH">Cash</option>
+                            <option value="BANK_TRANSFER">Bank Transfer</option>
+                            <option value="E_WALLET">E-Wallet</option>
+                            <option value="OTHER">Other</option>
+                        </select>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Reference</label>
+                        <input type="text" name="payout_reference" class="form-control" maxlength="100" placeholder="Optional release note, transfer ref, or voucher number">
+                    </div>
+                    <button class="btn btn-dark w-100">Save Release Status</button>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+
 <?= $this->endSection() ?>
 
+<?= $this->section('scripts') ?>
+<script>
+document.addEventListener('DOMContentLoaded', () => {
+    const releaseModal = document.getElementById('releasePayrollModal');
+    if (!releaseModal) {
+        return;
+    }
+
+    const form = document.getElementById('releasePayrollForm');
+    const summary = releaseModal.querySelector('[data-release-summary]');
+    const methodSelect = form.querySelector('[name="payout_method"]');
+    const referenceInput = form.querySelector('[name="payout_reference"]');
+
+    releaseModal.addEventListener('show.bs.modal', (event) => {
+        const trigger = event.relatedTarget;
+        if (!trigger) {
+            return;
+        }
+
+        const payrollId = trigger.getAttribute('data-payroll-id') || '0';
+        const riderLabel = trigger.getAttribute('data-rider-label') || 'Unknown rider';
+        const payrollRange = trigger.getAttribute('data-payroll-range') || '';
+        const payoutMethod = trigger.getAttribute('data-payout-method') || '';
+        const payoutReference = trigger.getAttribute('data-payout-reference') || '';
+
+        form.action = '<?= site_url('/admin/payroll') ?>/' + payrollId + '/release';
+        summary.textContent = riderLabel + ' | ' + payrollRange;
+        methodSelect.value = payoutMethod;
+        referenceInput.value = payoutReference;
+    });
+});
+</script>
+<?= $this->endSection() ?>

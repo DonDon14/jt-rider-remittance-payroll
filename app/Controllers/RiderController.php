@@ -258,6 +258,41 @@ class RiderController extends BaseController
         return redirect()->to('/rider-dashboard');
     }
 
+    public function confirmPayrollReceipt(int $payrollId)
+    {
+        $riderId = $this->resolveSessionRiderId();
+        if ($riderId <= 0) {
+            return redirect()->to('/login')->with('error', 'Rider account is not linked to a rider profile.');
+        }
+
+        $payrollModel = new PayrollModel();
+        $payroll = $payrollModel->find($payrollId);
+
+        if (! $payroll || (int) ($payroll['rider_id'] ?? 0) !== $riderId) {
+            return redirect()->to('/rider-dashboard')->with('error', 'Payroll record not found.');
+        }
+
+        if (($payroll['payroll_status'] ?? 'GENERATED') !== 'RELEASED') {
+            return redirect()->to('/rider-dashboard')->with('error', 'This payroll is not yet marked as released by admin.');
+        }
+
+        $rules = [
+            'received_notes' => 'permit_empty|max_length[500]',
+        ];
+
+        if (! $this->validate($rules)) {
+            return redirect()->back()->withInput()->with('error', implode(' ', $this->validator->getErrors()));
+        }
+
+        $payrollModel->update($payrollId, [
+            'payroll_status' => 'RECEIVED',
+            'received_at' => date('Y-m-d H:i:s'),
+            'received_notes' => trim((string) $this->request->getPost('received_notes')),
+        ]);
+
+        return redirect()->to('/rider-dashboard')->with('success', 'Payroll receipt confirmed.');
+    }
+
     private function resolveSessionRiderId(): int
     {
         $sessionRiderId = (int) session()->get('rider_id');

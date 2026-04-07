@@ -1597,6 +1597,7 @@ class AdminController extends BaseController
             'deduction_total' => $deductionTotal,
             'outstanding_shortage_balance' => $outstandingBalance,
             'net_pay' => $netPay,
+            'payroll_status' => 'GENERATED',
         ];
 
         $db = db_connect();
@@ -1623,6 +1624,41 @@ class AdminController extends BaseController
         }
 
         return redirect()->to('/admin/payroll')->with('success', 'Payroll generated for ' . $rider['name'] . ' covering ' . $startDate . ' to ' . $endDate . '.');
+    }
+
+    public function releasePayroll(int $id)
+    {
+        $payrollModel = new PayrollModel();
+        $payroll = $payrollModel->find($id);
+
+        if (! $payroll) {
+            return redirect()->to('/admin/payroll')->with('error', 'Payroll not found.');
+        }
+
+        if (($payroll['payroll_status'] ?? 'GENERATED') === 'RECEIVED') {
+            return redirect()->to('/admin/payroll')->with('error', 'This payroll is already confirmed as received by the rider.');
+        }
+
+        $rules = [
+            'payout_method' => 'required|in_list[CASH,BANK_TRANSFER,E_WALLET,OTHER]',
+            'payout_reference' => 'permit_empty|max_length[100]',
+        ];
+
+        if (! $this->validate($rules)) {
+            return redirect()->back()->withInput()->with('error', implode(' ', $this->validator->getErrors()));
+        }
+
+        $payrollModel->update($id, [
+            'payroll_status' => 'RELEASED',
+            'payout_method' => (string) $this->request->getPost('payout_method'),
+            'payout_reference' => trim((string) $this->request->getPost('payout_reference')),
+            'released_at' => date('Y-m-d H:i:s'),
+            'released_by_user_id' => (int) session()->get('user_id'),
+            'received_at' => null,
+            'received_notes' => null,
+        ]);
+
+        return redirect()->to('/admin/payroll')->with('success', 'Payroll marked as released and ready for rider confirmation.');
     }
 
     public function payrollPdf(int $id)
