@@ -68,6 +68,13 @@ $routes->post('/rider/announcements/(:num)/read', 'RiderController::markAnnounce
 
 $routes->group('api', static function ($routes) {
     $routes->post('login', 'Api\AuthController::login');
+    $routes->get('admin/pending-submissions', 'Api\AdminController::pendingSubmissions');
+    $routes->post('admin/pending-submissions/(:num)/approve', 'Api\AdminController::approveSubmission/$1');
+    $routes->post('admin/pending-submissions/(:num)/reject', 'Api\AdminController::rejectSubmission/$1');
+    $routes->get('admin/pending-remittances', 'Api\AdminController::pendingRemittances');
+    $routes->get('admin/shortages', 'Api\AdminController::shortages');
+    $routes->get('admin/payrolls', 'Api\AdminController::payrolls');
+    $routes->post('admin/payrolls/(:num)/release', 'Api\AdminController::releasePayroll/$1');
     $routes->get('rider/profile', 'Api\RiderController::profile');
     $routes->get('rider/dashboard', 'Api\RiderController::dashboard');
     $routes->get('rider/payrolls', 'Api\RiderController::payrolls');
