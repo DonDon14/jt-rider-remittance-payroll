@@ -630,3 +630,39 @@ body {
     background: #e5e7eb;
     color: #374151;
 }
+
+.searchable-select-enhanced {
+    position: relative;
+}
+
+.searchable-select-native {
+    display: none;
+}
+
+.searchable-select-results {
+    position: absolute;
+    inset: calc(100% + 0.35rem) 0 auto 0;
+    z-index: 1065;
+    max-height: 240px;
+    overflow-y: auto;
+    border-radius: 12px;
+}
+
+.searchable-select-option {
+    text-align: left;
+}
+
+.searchable-select-option.active {
+    background: linear-gradient(135deg, var(--brand) 0%, #ef6c00 100%);
+    border-color: transparent;
+    color: #fff;
+}
+
+.searchable-select-empty {
+    padding: 0.85rem 1rem;
+    background: #fff;
+    border: 1px solid #e5e7eb;
+    border-radius: 12px;
+    color: #6b7280;
+    font-size: 0.92rem;
+}

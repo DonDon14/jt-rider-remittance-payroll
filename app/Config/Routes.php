@@ -72,4 +72,8 @@ $routes->group('api', static function ($routes) {
     $routes->get('rider/dashboard', 'Api\RiderController::dashboard');
     $routes->get('rider/payrolls', 'Api\RiderController::payrolls');
     $routes->get('rider/submissions', 'Api\RiderController::submissions');
+    $routes->get('rider/announcements', 'Api\RiderController::announcements');
+    $routes->get('rider/remittance-accounts', 'Api\RiderController::remittanceAccounts');
+    $routes->post('rider/delivery-submissions', 'Api\RiderController::storeSubmission');
+    $routes->post('rider/payroll/(:num)/confirm', 'Api\RiderController::confirmPayrollReceipt/$1');
 });

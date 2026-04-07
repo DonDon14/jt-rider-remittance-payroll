@@ -138,56 +138,92 @@
             return;
         }
 
-        const originalOptions = Array.from(select.options).map((option) => ({
-            value: option.value,
-            text: option.text,
-            selected: option.selected,
-            commission: option.dataset.commission || '',
-        }));
+        wrapper.classList.add('searchable-select-enhanced');
+        select.classList.add('searchable-select-native');
 
-        const renderOptions = (query) => {
-            const normalized = query.trim().toLowerCase();
-            const currentValue = select.value;
-            let selectedValue = currentValue;
-            let hasCurrentValue = false;
-            select.innerHTML = '';
+        let results = wrapper.querySelector('[data-search-results]');
+        if (!results) {
+            results = document.createElement('div');
+            results.className = 'searchable-select-results list-group shadow-sm';
+            results.setAttribute('data-search-results', '');
+            input.insertAdjacentElement('afterend', results);
+        }
 
-            originalOptions.forEach((optionData) => {
-                if (optionData.value === '' || optionData.text.toLowerCase().includes(normalized)) {
-                    const option = document.createElement('option');
-                    option.value = optionData.value;
-                    option.textContent = optionData.text;
-                    if (optionData.value === currentValue) {
-                        hasCurrentValue = true;
-                    }
-                    if (optionData.commission) {
-                        option.dataset.commission = optionData.commission;
-                    }
-                    select.appendChild(option);
-                }
-            });
+        const originalOptions = Array.from(select.options)
+            .map((option) => ({
+                value: option.value,
+                text: option.text,
+                selected: option.selected,
+                commission: option.dataset.commission || '',
+            }));
 
-            if (!hasCurrentValue && normalized !== '') {
-                const firstMatch = Array.from(select.options).find((option) => option.value !== '');
-                if (firstMatch) {
-                    selectedValue = firstMatch.value;
-                }
+        const syncSelection = (value, updateInput = false) => {
+            select.value = value;
+            const selected = originalOptions.find((option) => option.value === value);
+            if (updateInput && selected && value !== '') {
+                input.value = selected.text;
             }
-
-            select.value = selectedValue;
             select.dispatchEvent(new Event('change'));
         };
 
-        input.addEventListener('input', () => renderOptions(input.value));
-        renderOptions(input.value);
+        const renderOptions = (query) => {
+            const normalized = query.trim().toLowerCase();
+            const matches = originalOptions.filter((option) => option.value !== '' && (normalized === '' || option.text.toLowerCase().includes(normalized)));
+            const activeValue = select.value;
+
+            results.innerHTML = '';
+            results.classList.toggle('d-none', matches.length === 0);
+
+            if (matches.length === 0) {
+                const emptyState = document.createElement('div');
+                emptyState.className = 'searchable-select-empty';
+                emptyState.textContent = 'No riders matched your search.';
+                results.appendChild(emptyState);
+                return;
+            }
+
+            matches.slice(0, 8).forEach((optionData) => {
+                const button = document.createElement('button');
+                button.type = 'button';
+                button.className = 'list-group-item list-group-item-action searchable-select-option';
+                button.textContent = optionData.text;
+                if (optionData.value === activeValue) {
+                    button.classList.add('active');
+                }
+                button.addEventListener('click', () => {
+                    syncSelection(optionData.value, true);
+                    renderOptions(input.value);
+                    input.focus();
+                });
+                results.appendChild(button);
+            });
+        };
+
+        input.addEventListener('focus', () => renderOptions(input.value));
+        input.addEventListener('input', () => {
+            if (select.value !== '') {
+                syncSelection('', false);
+            }
+            renderOptions(input.value);
+        });
+
+        document.addEventListener('click', (event) => {
+            if (!wrapper.contains(event.target)) {
+                results.classList.add('d-none');
+            }
+        });
 
         const modal = wrapper.closest('.modal');
         if (modal) {
             modal.addEventListener('show.bs.modal', () => {
                 input.value = '';
+                syncSelection('', false);
                 renderOptions('');
             });
         }
+
+        renderOptions('');
+        results.classList.add('d-none');
     });
 
     document.querySelectorAll('[data-modal-frame]').forEach((trigger) => {
@@ -317,6 +353,7 @@
         window.location.reload();
     });
 })();
+
 
 
 

@@ -2,11 +2,15 @@
 
 namespace App\Controllers\Api;
 
+use App\Models\AnnouncementModel;
+use App\Models\DeliveryAuditLogModel;
 use App\Models\DeliveryRecordModel;
 use App\Models\DeliverySubmissionModel;
 use App\Models\PayrollModel;
+use App\Models\RemittanceAccountModel;
 use App\Models\RemittanceModel;
 use App\Models\ShortagePaymentModel;
+use App\Models\UserModel;
 
 class RiderController extends BaseApiController
 {
@@ -170,6 +174,246 @@ class RiderController extends BaseApiController
                 ],
                 'notes' => (string) ($row['notes'] ?? ''),
             ], $rows),
+        ]);
+    }
+
+    public function announcements()
+    {
+        $user = $this->requireApiUser('rider');
+        if (! is_array($user)) {
+            return $user;
+        }
+
+        $today = date('Y-m-d H:i:s');
+        $rows = (new AnnouncementModel())
+            ->orderBy('published_at', 'DESC')
+            ->orderBy('id', 'DESC')
+            ->findAll();
+
+        $items = array_values(array_filter(array_map(static function (array $announcement) use ($today): ?array {
+            if (! (bool) ($announcement['is_active'] ?? false)) {
+                return null;
+            }
+
+            if (! empty($announcement['published_at']) && (string) $announcement['published_at'] > $today) {
+                return null;
+            }
+
+            if (! empty($announcement['expires_at']) && (string) $announcement['expires_at'] < $today) {
+                return null;
+            }
+
+            return [
+                'id' => (int) $announcement['id'],
+                'title' => (string) $announcement['title'],
+                'message' => (string) $announcement['message'],
+                'published_at' => (string) ($announcement['published_at'] ?? ''),
+                'expires_at' => (string) ($announcement['expires_at'] ?? ''),
+            ];
+        }, $rows)));
+
+        return $this->success(['items' => $items]);
+    }
+
+    public function remittanceAccounts()
+    {
+        $user = $this->requireApiUser('rider');
+        if (! is_array($user)) {
+            return $user;
+        }
+
+        $rows = (new RemittanceAccountModel())
+            ->where('is_active', 1)
+            ->orderBy('sort_order', 'ASC')
+            ->orderBy('account_name', 'ASC')
+            ->findAll();
+
+        return $this->success([
+            'items' => array_map(static fn (array $row): array => [
+                'id' => (int) $row['id'],
+                'account_name' => (string) $row['account_name'],
+                'account_number' => (string) ($row['account_number'] ?? ''),
+                'description' => (string) ($row['description'] ?? ''),
+            ], $rows),
+        ]);
+    }
+
+    public function storeSubmission()
+    {
+        $user = $this->requireApiUser('rider');
+        if (! is_array($user)) {
+            return $user;
+        }
+
+        $rider = $user['resolved_rider'] ?? null;
+        if (! $rider) {
+            return $this->failUnauthorized('Rider profile not found.');
+        }
+
+        $payload = $this->request->getJSON(true);
+        if (! is_array($payload)) {
+            $payload = $this->request->getPost();
+        }
+
+        $rules = [
+            'delivery_date' => 'required|valid_date[Y-m-d]',
+            'allocated_parcels' => 'required|is_natural',
+            'successful_deliveries' => 'required|is_natural',
+            'expected_remittance' => 'required|decimal',
+            'remittance_account_id' => 'required|is_natural_no_zero',
+            'notes' => 'permit_empty|max_length[1000]',
+        ];
+
+        if (! $this->validateData($payload, $rules)) {
+            return $this->failValidation($this->validator->getErrors());
+        }
+
+        $allocated = (int) ($payload['allocated_parcels'] ?? 0);
+        $successful = (int) ($payload['successful_deliveries'] ?? 0);
+        if ($successful > $allocated) {
+            return $this->response->setStatusCode(422)->setJSON([
+                'status' => 'error',
+                'message' => 'Successful deliveries cannot exceed allocated parcels.',
+            ]);
+        }
+
+        $expectedRemittance = round((float) ($payload['expected_remittance'] ?? 0), 2);
+        if ($expectedRemittance < 0) {
+            return $this->response->setStatusCode(422)->setJSON([
+                'status' => 'error',
+                'message' => 'Expected remittance cannot be negative.',
+            ]);
+        }
+
+        $remittanceAccountId = (int) ($payload['remittance_account_id'] ?? 0);
+        $remittanceAccount = (new RemittanceAccountModel())
+            ->where('id', $remittanceAccountId)
+            ->where('is_active', 1)
+            ->first();
+        if (! $remittanceAccount) {
+            return $this->response->setStatusCode(422)->setJSON([
+                'status' => 'error',
+                'message' => 'Select a valid remittance account before submitting the request.',
+            ]);
+        }
+
+        $submissionModel = new DeliverySubmissionModel();
+        $deliveryDate = (string) ($payload['delivery_date'] ?? '');
+        $existing = $submissionModel
+            ->where('rider_id', (int) $rider['id'])
+            ->where('delivery_date', $deliveryDate)
+            ->where('status', 'PENDING')
+            ->first();
+
+        $submissionPayload = [
+            'rider_id' => (int) $rider['id'],
+            'delivery_date' => $deliveryDate,
+            'allocated_parcels' => $allocated,
+            'successful_deliveries' => $successful,
+            'failed_deliveries' => max(0, $allocated - $successful),
+            'expected_remittance' => $expectedRemittance,
+            'remittance_account_id' => $remittanceAccountId,
+            'notes' => trim((string) ($payload['notes'] ?? '')),
+            'status' => 'PENDING',
+        ];
+
+        $auditModel = new DeliveryAuditLogModel();
+        $actorUserId = (int) $user['id'];
+        if ($existing) {
+            $submissionModel->update((int) $existing['id'], $submissionPayload);
+            $auditModel->insert([
+                'delivery_submission_id' => (int) $existing['id'],
+                'rider_id' => (int) $rider['id'],
+                'actor_user_id' => $actorUserId,
+                'actor_role' => 'rider',
+                'action' => 'RIDER_SUBMISSION_UPDATED',
+                'notes' => 'Rider updated pending delivery submission via API.',
+                'details_json' => json_encode([
+                    'delivery_date' => $deliveryDate,
+                    'successful_deliveries' => $successful,
+                    'expected_remittance' => $expectedRemittance,
+                ], JSON_UNESCAPED_UNICODE),
+                'created_at' => date('Y-m-d H:i:s'),
+            ]);
+
+            return $this->success([
+                'message' => 'Delivery request updated.',
+                'submission_id' => (int) $existing['id'],
+            ]);
+        }
+
+        $submissionModel->insert($submissionPayload);
+        $submissionId = (int) $submissionModel->getInsertID();
+        $auditModel->insert([
+            'delivery_submission_id' => $submissionId,
+            'rider_id' => (int) $rider['id'],
+            'actor_user_id' => $actorUserId,
+            'actor_role' => 'rider',
+            'action' => 'RIDER_SUBMISSION_CREATED',
+            'notes' => 'Rider created delivery submission via API.',
+            'details_json' => json_encode([
+                'delivery_date' => $deliveryDate,
+                'successful_deliveries' => $successful,
+                'expected_remittance' => $expectedRemittance,
+            ], JSON_UNESCAPED_UNICODE),
+            'created_at' => date('Y-m-d H:i:s'),
+        ]);
+
+        return $this->success([
+            'message' => 'Delivery request submitted.',
+            'submission_id' => $submissionId,
+        ], 201);
+    }
+
+    public function confirmPayrollReceipt(int $payrollId)
+    {
+        $user = $this->requireApiUser('rider');
+        if (! is_array($user)) {
+            return $user;
+        }
+
+        $rider = $user['resolved_rider'] ?? null;
+        if (! $rider) {
+            return $this->failUnauthorized('Rider profile not found.');
+        }
+
+        $payroll = (new PayrollModel())->find($payrollId);
+        if (! $payroll || (int) ($payroll['rider_id'] ?? 0) !== (int) $rider['id']) {
+            return $this->response->setStatusCode(404)->setJSON([
+                'status' => 'error',
+                'message' => 'Payroll record not found.',
+            ]);
+        }
+
+        if (($payroll['payroll_status'] ?? 'GENERATED') !== 'RELEASED') {
+            return $this->response->setStatusCode(409)->setJSON([
+                'status' => 'error',
+                'message' => 'This payroll is not yet marked as released by admin.',
+            ]);
+        }
+
+        $payload = $this->request->getJSON(true);
+        if (! is_array($payload)) {
+            $payload = $this->request->getPost();
+        }
+
+        $rules = [
+            'received_notes' => 'permit_empty|max_length[500]',
+        ];
+
+        if (! $this->validateData($payload, $rules)) {
+            return $this->failValidation($this->validator->getErrors());
+        }
+
+        (new PayrollModel())->update($payrollId, [
+            'payroll_status' => 'RECEIVED',
+            'received_at' => date('Y-m-d H:i:s'),
+            'received_notes' => trim((string) ($payload['received_notes'] ?? '')),
+        ]);
+
+        return $this->success([
+            'message' => 'Payroll receipt confirmed.',
+            'payroll_id' => $payrollId,
         ]);
     }
 }
