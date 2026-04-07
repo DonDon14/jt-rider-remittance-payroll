@@ -107,6 +107,196 @@ final class WorkflowSmokeTest extends CIUnitTestCase
         $this->assertTrue((bool) $account['is_active']);
     }
 
+    public function testAdminApprovalCreatesDeliveryRecordFromSubmission(): void
+    {
+        $db = db_connect();
+        $now = date('Y-m-d H:i:s');
+
+        $db->table('delivery_submissions')->insert([
+            'id' => 1,
+            'rider_id' => 3,
+            'delivery_date' => '2026-04-08',
+            'allocated_parcels' => 24,
+            'successful_deliveries' => 21,
+            'failed_deliveries' => 3,
+            'expected_remittance' => 3200.00,
+            'remittance_account_id' => 1,
+            'notes' => 'Pending approval from smoke test.',
+            'status' => 'PENDING',
+            'processed_delivery_record_id' => null,
+            'created_at' => $now,
+            'updated_at' => $now,
+        ]);
+
+        $security = service('security');
+        $tokenName = $security->getTokenName();
+        $tokenHash = $security->generateHash();
+
+        $result = $this->withSession([
+            'isLoggedIn' => true,
+            'role' => 'admin',
+            'user_id' => 1,
+            'force_password_change' => false,
+            'username' => 'admin',
+        ])->post('/admin/delivery-submissions/1/approve', [
+            $tokenName => $tokenHash,
+            'commission_rate' => '13.25',
+        ]);
+
+        $result->assertRedirect();
+        $result->assertRedirectTo(site_url('/admin/remittance/1'));
+
+        $delivery = $db->table('delivery_records')->where('id', 1)->get()->getRowArray();
+        $submission = $db->table('delivery_submissions')->where('id', 1)->get()->getRowArray();
+        $auditLogs = $db->table('delivery_audit_logs')->where('delivery_submission_id', 1)->countAllResults();
+
+        $this->assertNotNull($delivery);
+        $this->assertSame('RIDER_SUBMISSION', $delivery['entry_source']);
+        $this->assertSame(1, (int) $delivery['remittance_account_id']);
+        $this->assertSame(278.25, (float) $delivery['total_due']);
+        $this->assertSame('APPROVED', $submission['status']);
+        $this->assertSame(1, (int) $submission['processed_delivery_record_id']);
+        $this->assertSame(2, $auditLogs);
+    }
+
+    public function testAdminSaveRemittancePersistsVarianceAndAccount(): void
+    {
+        $db = db_connect();
+        $now = date('Y-m-d H:i:s');
+
+        $db->table('delivery_records')->insert([
+            'id' => 1,
+            'rider_id' => 3,
+            'delivery_date' => '2026-04-09',
+            'allocated_parcels' => 25,
+            'successful_deliveries' => 20,
+            'failed_deliveries' => 5,
+            'total_due' => 265.00,
+            'expected_remittance' => 2500.00,
+            'remittance_account_id' => 1,
+            'commission_rate' => 13.25,
+            'notes' => 'Ready for remittance.',
+            'entry_source' => 'RIDER_SUBMISSION',
+            'source_submission_id' => null,
+            'created_by_user_id' => 1,
+            'last_admin_reason' => 'Seeded for remittance test.',
+            'payroll_id' => null,
+            'created_at' => $now,
+            'updated_at' => $now,
+        ]);
+
+        $security = service('security');
+        $tokenName = $security->getTokenName();
+        $tokenHash = $security->generateHash();
+
+        $result = $this->withSession([
+            'isLoggedIn' => true,
+            'role' => 'admin',
+            'user_id' => 1,
+            'force_password_change' => false,
+            'username' => 'admin',
+        ])->post('/admin/remittance/1', [
+            $tokenName => $tokenHash,
+            'denom_1000' => '2',
+            'denom_500' => '1',
+            'actual_remitted' => '2450.00',
+        ]);
+
+        $result->assertRedirect();
+        $result->assertRedirectTo(site_url('/admin/remittance/1'));
+
+        $remittance = $db->table('remittances')->where('delivery_record_id', 1)->get()->getRowArray();
+
+        $this->assertNotNull($remittance);
+        $this->assertSame(1, (int) $remittance['remittance_account_id']);
+        $this->assertSame(2450.0, (float) $remittance['total_remitted']);
+        $this->assertSame(50.0, (float) $remittance['variance_amount']);
+        $this->assertSame('SHORT', $remittance['variance_type']);
+    }
+
+    public function testAdminGeneratePayrollLocksCoveredDeliveries(): void
+    {
+        $db = db_connect();
+        $now = date('Y-m-d H:i:s');
+
+        $db->table('delivery_records')->insert([
+            'id' => 1,
+            'rider_id' => 3,
+            'delivery_date' => '2026-04-10',
+            'allocated_parcels' => 18,
+            'successful_deliveries' => 16,
+            'failed_deliveries' => 2,
+            'total_due' => 212.00,
+            'expected_remittance' => 2100.00,
+            'remittance_account_id' => 1,
+            'commission_rate' => 13.25,
+            'notes' => 'Seeded for payroll test.',
+            'entry_source' => 'ADMIN_MANUAL',
+            'source_submission_id' => null,
+            'created_by_user_id' => 1,
+            'last_admin_reason' => 'Seeded for payroll test.',
+            'payroll_id' => null,
+            'created_at' => $now,
+            'updated_at' => $now,
+        ]);
+
+        $db->table('remittances')->insert([
+            'id' => 1,
+            'rider_id' => 3,
+            'delivery_record_id' => 1,
+            'delivery_date' => '2026-04-10',
+            'remittance_account_id' => 1,
+            'denom_025' => 0,
+            'denom_1' => 0,
+            'denom_5' => 0,
+            'denom_10' => 0,
+            'denom_20' => 0,
+            'denom_50' => 0,
+            'denom_100' => 1,
+            'denom_500' => 0,
+            'denom_1000' => 2,
+            'total_due' => 212.00,
+            'total_remitted' => 2100.00,
+            'supposed_remittance' => 2100.00,
+            'actual_remitted' => 2100.00,
+            'variance_amount' => 0.00,
+            'variance_type' => 'BALANCED',
+            'created_at' => $now,
+            'updated_at' => $now,
+        ]);
+
+        $security = service('security');
+        $tokenName = $security->getTokenName();
+        $tokenHash = $security->generateHash();
+
+        $result = $this->withSession([
+            'isLoggedIn' => true,
+            'role' => 'admin',
+            'user_id' => 1,
+            'force_password_change' => false,
+            'username' => 'admin',
+        ])->post('/admin/payroll/generate', [
+            $tokenName => $tokenHash,
+            'rider_id' => '3',
+            'payroll_month' => '2026-04',
+            'cutoff_period' => 'FIRST',
+        ]);
+
+        $result->assertRedirect();
+        $result->assertRedirectTo(site_url('/admin/payroll'));
+
+        $payroll = $db->table('payrolls')->where('rider_id', 3)->get()->getRowArray();
+        $delivery = $db->table('delivery_records')->where('id', 1)->get()->getRowArray();
+
+        $this->assertNotNull($payroll);
+        $this->assertSame('2026-04-01', $payroll['start_date']);
+        $this->assertSame('2026-04-15', $payroll['end_date']);
+        $this->assertSame(16, (int) $payroll['total_successful']);
+        $this->assertSame(212.0, (float) $payroll['gross_earnings']);
+        $this->assertSame(212.0, (float) $payroll['net_pay']);
+        $this->assertSame((int) $payroll['id'], (int) $delivery['payroll_id']);
+    }
+
     private function resetSchema(): void
     {
         $db = db_connect();
@@ -119,6 +309,7 @@ final class WorkflowSmokeTest extends CIUnitTestCase
             'remittances',
             'delivery_records',
             'payrolls',
+            'payroll_adjustments',
             'announcements',
             'users',
             'remittance_accounts',
@@ -247,6 +438,19 @@ final class WorkflowSmokeTest extends CIUnitTestCase
             updated_at DATETIME NULL
         )');
 
+        $db->query('CREATE TABLE ' . $prefix . 'payroll_adjustments (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            rider_id INTEGER NOT NULL,
+            adjustment_date DATE NOT NULL,
+            type VARCHAR(20) NOT NULL,
+            amount REAL NOT NULL DEFAULT 0,
+            description VARCHAR(255) NULL,
+            batch_reference VARCHAR(100) NULL,
+            payroll_id INTEGER NULL,
+            created_at DATETIME NULL,
+            updated_at DATETIME NULL
+        )');
+
         $db->query('CREATE TABLE ' . $prefix . 'announcements (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             title VARCHAR(255) NOT NULL,
@@ -341,11 +545,3 @@ final class WorkflowSmokeTest extends CIUnitTestCase
         ]);
     }
 }
-
-
-
-
-
-
-
-
