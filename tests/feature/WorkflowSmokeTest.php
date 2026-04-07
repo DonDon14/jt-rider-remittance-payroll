@@ -411,6 +411,7 @@ final class WorkflowSmokeTest extends CIUnitTestCase
         $prefix = $db->getPrefix();
 
         foreach ([
+            'api_tokens',
             'delivery_audit_logs',
             'delivery_submissions',
             'shortage_payments',
@@ -593,6 +594,17 @@ final class WorkflowSmokeTest extends CIUnitTestCase
             updated_at DATETIME NULL
         )');
 
+        $db->query('CREATE TABLE ' . $prefix . 'api_tokens (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER NOT NULL,
+            token_hash VARCHAR(64) NOT NULL,
+            token_name VARCHAR(50) NOT NULL DEFAULT "mobile",
+            expires_at DATETIME NULL,
+            last_used_at DATETIME NULL,
+            created_at DATETIME NULL,
+            updated_at DATETIME NULL
+        )');
+
         $db->query('CREATE TABLE ' . $prefix . 'delivery_audit_logs (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             delivery_record_id INTEGER NULL,
@@ -660,6 +672,8 @@ final class WorkflowSmokeTest extends CIUnitTestCase
         ]);
     }
 }
+
+
 
 
 

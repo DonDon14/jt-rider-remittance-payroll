@@ -65,3 +65,11 @@ $routes->get('/rider/(:num)', 'RiderController::dashboard/$1', ['filter' => 'rid
 $routes->post('/rider/delivery-submissions', 'RiderController::storeDeliverySubmission', ['filter' => 'rider']);
 $routes->post('/rider/payroll/(:num)/confirm', 'RiderController::confirmPayrollReceipt/$1', ['filter' => 'rider']);
 $routes->post('/rider/announcements/(:num)/read', 'RiderController::markAnnouncementRead/$1', ['filter' => 'rider']);
+
+$routes->group('api', static function ($routes) {
+    $routes->post('login', 'Api\AuthController::login');
+    $routes->get('rider/profile', 'Api\RiderController::profile');
+    $routes->get('rider/dashboard', 'Api\RiderController::dashboard');
+    $routes->get('rider/payrolls', 'Api\RiderController::payrolls');
+    $routes->get('rider/submissions', 'Api\RiderController::submissions');
+});

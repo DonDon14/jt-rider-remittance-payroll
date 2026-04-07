@@ -148,6 +148,8 @@
         const renderOptions = (query) => {
             const normalized = query.trim().toLowerCase();
             const currentValue = select.value;
+            let selectedValue = currentValue;
+            let hasCurrentValue = false;
             select.innerHTML = '';
 
             originalOptions.forEach((optionData) => {
@@ -155,7 +157,9 @@
                     const option = document.createElement('option');
                     option.value = optionData.value;
                     option.textContent = optionData.text;
-                    option.selected = optionData.value === currentValue || optionData.selected;
+                    if (optionData.value === currentValue) {
+                        hasCurrentValue = true;
+                    }
                     if (optionData.commission) {
                         option.dataset.commission = optionData.commission;
                     }
@@ -163,10 +167,27 @@
                 }
             });
 
+            if (!hasCurrentValue && normalized !== '') {
+                const firstMatch = Array.from(select.options).find((option) => option.value !== '');
+                if (firstMatch) {
+                    selectedValue = firstMatch.value;
+                }
+            }
+
+            select.value = selectedValue;
             select.dispatchEvent(new Event('change'));
         };
 
         input.addEventListener('input', () => renderOptions(input.value));
+        renderOptions(input.value);
+
+        const modal = wrapper.closest('.modal');
+        if (modal) {
+            modal.addEventListener('show.bs.modal', () => {
+                input.value = '';
+                renderOptions('');
+            });
+        }
     });
 
     document.querySelectorAll('[data-modal-frame]').forEach((trigger) => {
@@ -296,6 +317,7 @@
         window.location.reload();
     });
 })();
+
 
 
 
