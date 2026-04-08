@@ -10,6 +10,7 @@ use App\Models\DeliverySubmissionModel;
 use App\Models\PayrollModel;
 use App\Models\PayrollAdjustmentModel;
 use App\Models\RemittanceModel;
+use App\Models\RemittanceEntryModel;
 use App\Models\RemittanceAccountModel;
 use App\Models\RiderModel;
 use App\Models\RiderCommissionRateModel;
@@ -1268,6 +1269,7 @@ class AdminController extends BaseController
             $payload['source_submission_id'] = $existing['source_submission_id'] ?? null;
             $payload['created_by_user_id'] = $existing['created_by_user_id'] ?? (int) session()->get('user_id');
             $deliveryModel->update((int) $existing['id'], $payload);
+            $this->syncPendingRemittanceForDelivery((int) $existing['id'], array_merge($existing, $payload, ['delivery_record_id' => (int) $existing['id']]));
             $this->logDeliveryAudit($auditModel, [
                 'delivery_record_id' => (int) $existing['id'],
                 'rider_id' => (int) $payload['rider_id'],
@@ -1289,6 +1291,7 @@ class AdminController extends BaseController
         $payload['created_by_user_id'] = (int) session()->get('user_id');
         $deliveryModel->insert($payload);
         $deliveryId = (int) $deliveryModel->getInsertID();
+        $this->syncPendingRemittanceForDelivery($deliveryId, array_merge($payload, ['delivery_record_id' => $deliveryId]));
         $this->logDeliveryAudit($auditModel, [
             'delivery_record_id' => $deliveryId,
             'rider_id' => (int) $payload['rider_id'],
@@ -1353,6 +1356,7 @@ class AdminController extends BaseController
             ->where('rider_id', (int) $submission['rider_id'])
             ->where('delivery_date', (string) $submission['delivery_date'])
             ->first();
+        $existingWasCollected = false;
 
         if ($existing) {
             $deliveryId = (int) $existing['id'];
@@ -1362,10 +1366,20 @@ class AdminController extends BaseController
                 return redirect()->back()->withInput()->with('error', 'This delivery day is already locked into payroll. Reopen the payroll batch before approving the rider submission.');
             }
             $existingRemittance = (new RemittanceModel())->where('delivery_record_id', $deliveryId)->first();
-            if ($existingRemittance && ! in_array((string) ($existingRemittance['variance_type'] ?? 'PENDING'), ['PENDING'], true)) {
-                $db->transRollback();
-
-                return redirect()->back()->withInput()->with('error', 'This delivery day already has a finalized remittance record. Use the delivery correction workflow instead of approving over a collected day.');
+            $existingWasCollected = $existingRemittance && ! in_array((string) ($existingRemittance['variance_type'] ?? 'PENDING'), ['PENDING'], true);
+            if ($existingWasCollected) {
+                $existingNotes = trim((string) ($existing['notes'] ?? ''));
+                $submissionNotes = trim((string) ($submission['notes'] ?? ''));
+                $payload['allocated_parcels'] = (int) ($existing['allocated_parcels'] ?? 0) + (int) $payload['allocated_parcels'];
+                $payload['successful_deliveries'] = (int) ($existing['successful_deliveries'] ?? 0) + (int) $payload['successful_deliveries'];
+                $payload['failed_deliveries'] = (int) ($existing['failed_deliveries'] ?? 0) + (int) $payload['failed_deliveries'];
+                $payload['expected_remittance'] = round((float) ($existing['expected_remittance'] ?? 0) + (float) $payload['expected_remittance'], 2);
+                $payload['total_due'] = round((float) ($existing['total_due'] ?? 0) + (float) $payload['total_due'], 2);
+                $payload['notes'] = trim(implode("\n", array_filter([
+                    $existingNotes,
+                    $submissionNotes !== '' ? 'Supplemental submission: ' . $submissionNotes : null,
+                ])));
+                $payload['last_admin_reason'] = 'Merged supplemental rider submission into an already collected delivery day.';
             }
             $payload['created_by_user_id'] = $existing['created_by_user_id'] ?? (int) session()->get('user_id');
             $deliveryModel->update($deliveryId, $payload);
@@ -1373,7 +1387,7 @@ class AdminController extends BaseController
             $deliveryId = (int) $deliveryModel->insert($payload);
         }
 
-        $this->syncPendingRemittanceForDelivery($deliveryId, $payload);
+        $this->syncPendingRemittanceForDelivery($deliveryId, array_merge($payload, ['delivery_record_id' => $deliveryId]));
 
         $submissionModel->update($submissionId, [
             'status' => 'APPROVED',
@@ -1397,6 +1411,7 @@ class AdminController extends BaseController
                 'expected_remittance' => $payload['expected_remittance'],
                 'successful_deliveries' => $successful,
                 'remittance_account' => $this->formatRemittanceAccountLabel($submission),
+                'approval_mode' => $existingWasCollected ? 'SUPPLEMENTAL_MERGE' : ($existing ? 'DAY_UPDATE' : 'NEW_DAY'),
             ], JSON_UNESCAPED_UNICODE),
         ]);
         $this->logDeliveryAudit($auditModel, [
@@ -1409,9 +1424,8 @@ class AdminController extends BaseController
 
         $target = '/admin/remittance/' . $deliveryId . ($this->request->getGet('modal') === '1' ? '?modal=1' : '');
 
-        return redirect()->to($target)->with('success', 'Rider submission approved. Review the remittance using the final commission rate.');
+        return redirect()->to($target)->with('success', $existingWasCollected ? 'Supplemental rider submission approved. Record the additional remittance for this day.' : 'Rider submission approved. Review the remittance using the final commission rate.');
     }
-
     public function rejectDeliverySubmission(int $submissionId)
     {
         $submissionModel = new DeliverySubmissionModel();
@@ -1550,6 +1564,7 @@ class AdminController extends BaseController
         ];
 
         $deliveryModel->update((int) $delivery['id'], $deliveryPayload);
+        $this->syncPendingRemittanceForDelivery((int) $delivery['id'], array_merge($delivery, $deliveryPayload, ['delivery_record_id' => (int) $delivery['id']]));
         $requestModel->update($requestId, [
             'status' => 'APPLIED',
             'resolution_note' => 'Correction applied to delivery record.',
@@ -1606,7 +1621,7 @@ class AdminController extends BaseController
         }
 
         $remittance = (new RemittanceModel())->where('delivery_record_id', $deliveryRecordId)->first();
-
+        $entries = $remittance ? $this->getRemittanceEntriesForSummary((int) $remittance['id']) : [];
         $isModal = $this->request->getGet('modal') === '1';
 
         return view('admin/remittance_form', array_merge(
@@ -1614,6 +1629,7 @@ class AdminController extends BaseController
             [
                 'delivery' => $delivery,
                 'remittance' => $remittance,
+                'entries' => $entries,
                 'denominations' => $this->denominations,
                 'layout' => $isModal ? 'layouts/modal' : 'layouts/main',
                 'isModal' => $isModal,
@@ -1633,61 +1649,49 @@ class AdminController extends BaseController
         $cashInput = trim((string) $this->request->getPost('cash_remitted'));
         $gcashInput = trim((string) $this->request->getPost('gcash_remitted'));
         $gcashReference = trim((string) $this->request->getPost('gcash_reference'));
-        $supposedRemittance = isset($delivery['expected_remittance']) ? (float) $delivery['expected_remittance'] : null;
+        $entryNotes = trim((string) $this->request->getPost('entry_notes'));
         $cashRemitted = $totals['cash_total'] > 0
             ? $totals['cash_total']
             : ($cashInput === '' ? 0.0 : (float) $cashInput);
         $gcashRemitted = $gcashInput === '' ? 0.0 : (float) $gcashInput;
 
-        if (($supposedRemittance !== null && $supposedRemittance < 0) || $cashRemitted < 0 || $gcashRemitted < 0) {
+        if ($cashRemitted < 0 || $gcashRemitted < 0) {
             return redirect()->back()->withInput()->with('error', 'Remittance amounts cannot be negative.');
         }
 
-        $totalRemitted = round($cashRemitted + $gcashRemitted, 2);
-
-        $variance = 0.0;
-        $type = 'PENDING';
-
-        if ($supposedRemittance !== null) {
-            $variance = round($totalRemitted - $supposedRemittance, 2);
-            $type = 'BALANCED';
-
-            if ($variance > 0.005) {
-                $type = 'OVER';
-            } elseif ($variance < -0.005) {
-                $type = 'SHORT';
-            }
+        $entryTotal = round($cashRemitted + $gcashRemitted, 2);
+        if ($entryTotal <= 0) {
+            return redirect()->back()->withInput()->with('error', 'Enter the cash, GCash, or denomination counts for the remittance piece you are recording.');
         }
 
-        $payload = array_merge($totals['denoms'], [
-            'rider_id' => (int) $delivery['rider_id'],
-            'delivery_record_id' => $deliveryRecordId,
-            'delivery_date' => $delivery['delivery_date'],
+        $summary = $this->syncPendingRemittanceForDelivery($deliveryRecordId, array_merge($delivery, ['delivery_record_id' => $deliveryRecordId]));
+        if (! $summary) {
+            return redirect()->back()->withInput()->with('error', 'Unable to prepare the remittance summary for this delivery day.');
+        }
+
+        $entryModel = new RemittanceEntryModel();
+        $existingEntries = $this->getRemittanceEntriesForSummary((int) $summary['id']);
+        $entryModel->insert(array_merge($totals['denoms'], [
+            'remittance_id' => (int) $summary['id'],
             'remittance_account_id' => ! empty($delivery['remittance_account_id']) ? (int) $delivery['remittance_account_id'] : null,
+            'entry_type' => $existingEntries === [] ? 'INITIAL' : 'SUPPLEMENTAL',
+            'entry_sequence' => count($existingEntries) + 1,
             'cash_remitted' => $cashRemitted,
             'gcash_remitted' => $gcashRemitted,
             'gcash_reference' => $gcashReference !== '' ? $gcashReference : null,
-            'total_due' => (float) $delivery['total_due'],
-            'total_remitted' => $totalRemitted,
-            'supposed_remittance' => $supposedRemittance,
-            'actual_remitted' => $totalRemitted,
-            'variance_amount' => abs($variance),
-            'variance_type' => $type,
-        ]);
+            'total_remitted' => $entryTotal,
+            'notes' => $entryNotes !== '' ? $entryNotes : null,
+            'created_by_user_id' => (int) session()->get('user_id') ?: null,
+        ]));
 
-        $model = new RemittanceModel();
-        $existing = $model->where('delivery_record_id', $deliveryRecordId)->first();
-
-        if ($existing) {
-            $model->update((int) $existing['id'], $payload);
-            $id = (int) $existing['id'];
-        } else {
-            $id = (int) $model->insert($payload);
-        }
-
+        $updatedRemittance = $this->syncPendingRemittanceForDelivery($deliveryRecordId, array_merge($delivery, ['delivery_record_id' => $deliveryRecordId]));
         $target = '/admin/remittance/' . $deliveryRecordId . ($isModal ? '?modal=1' : '');
+        $statusLabel = (string) ($updatedRemittance['variance_type'] ?? 'PENDING');
+        $message = count($existingEntries) > 0
+            ? 'Supplemental remittance recorded. Status: ' . $statusLabel . '. Receipt is ready to download.'
+            : 'Remittance saved. Status: ' . $statusLabel . '. Receipt is ready to download.';
 
-        return redirect()->to($target)->with('success', 'Remittance saved. Status: ' . $type . '. Receipt is ready to download.')->with('remittance_id', $id);
+        return redirect()->to($target)->with('success', $message)->with('remittance_id', (int) ($updatedRemittance['id'] ?? $summary['id']));
     }
 
     public function recordShortagePayment(int $remittanceId)
@@ -1741,7 +1745,11 @@ class AdminController extends BaseController
             return redirect()->to('/admin/remittances')->with('error', 'Remittance not found.');
         }
 
-        $html = view('pdf/remittance_receipt', ['record' => $record, 'denominations' => $this->denominations]);
+        $html = view('pdf/remittance_receipt', [
+            'record' => $record,
+            'entries' => $this->getRemittanceEntriesForSummary((int) $record['id']),
+            'denominations' => $this->denominations,
+        ]);
 
         return $this->renderPdf($html, 'remittance-receipt-' . $record['rider_code'] . '-' . $record['delivery_date'] . '.pdf');
     }
@@ -2191,35 +2199,90 @@ class AdminController extends BaseController
         ];
     }
 
-    private function syncPendingRemittanceForDelivery(int $deliveryId, array $deliveryPayload): void
+    private function buildRemittanceAggregatePayload(array $deliveryPayload, array $entries): array
+    {
+        $denomTotals = array_fill_keys(array_keys($this->denominations), 0);
+        $cashRemitted = 0.0;
+        $gcashRemitted = 0.0;
+        $latestReference = null;
+
+        foreach ($entries as $entry) {
+            foreach (array_keys($this->denominations) as $field) {
+                $denomTotals[$field] += (int) ($entry[$field] ?? 0);
+            }
+
+            $cashRemitted += (float) ($entry['cash_remitted'] ?? 0);
+            $gcashRemitted += (float) ($entry['gcash_remitted'] ?? 0);
+
+            $reference = trim((string) ($entry['gcash_reference'] ?? ''));
+            if ($reference !== '') {
+                $latestReference = $reference;
+            }
+        }
+
+        $supposedRemittance = isset($deliveryPayload['expected_remittance']) ? (float) $deliveryPayload['expected_remittance'] : null;
+        $totalRemitted = round($cashRemitted + $gcashRemitted, 2);
+        $variance = 0.0;
+        $varianceType = 'PENDING';
+        $actualRemitted = null;
+
+        if ($entries !== []) {
+            $actualRemitted = $totalRemitted;
+            if ($supposedRemittance !== null) {
+                $variance = round($totalRemitted - $supposedRemittance, 2);
+                $varianceType = 'BALANCED';
+                if ($variance > 0.005) {
+                    $varianceType = 'OVER';
+                } elseif ($variance < -0.005) {
+                    $varianceType = 'SHORT';
+                }
+            }
+        }
+
+        return array_merge($denomTotals, [
+            'rider_id' => (int) ($deliveryPayload['rider_id'] ?? 0),
+            'delivery_record_id' => (int) ($deliveryPayload['delivery_record_id'] ?? 0),
+            'delivery_date' => (string) ($deliveryPayload['delivery_date'] ?? date('Y-m-d')),
+            'remittance_account_id' => ! empty($deliveryPayload['remittance_account_id']) ? (int) $deliveryPayload['remittance_account_id'] : null,
+            'cash_remitted' => round($cashRemitted, 2),
+            'gcash_remitted' => round($gcashRemitted, 2),
+            'gcash_reference' => $latestReference,
+            'total_due' => round((float) ($deliveryPayload['total_due'] ?? 0), 2),
+            'total_remitted' => $entries === [] ? 0.0 : $totalRemitted,
+            'supposed_remittance' => $supposedRemittance,
+            'actual_remitted' => $actualRemitted,
+            'variance_amount' => abs($variance),
+            'variance_type' => $varianceType,
+        ]);
+    }
+
+    private function getRemittanceEntriesForSummary(int $remittanceId): array
+    {
+        return (new RemittanceEntryModel())
+            ->select('remittance_entries.*, remittance_accounts.account_name AS remittance_account_name, remittance_accounts.account_number AS remittance_account_number')
+            ->join('remittance_accounts', 'remittance_accounts.id = remittance_entries.remittance_account_id', 'left')
+            ->where('remittance_id', $remittanceId)
+            ->orderBy('entry_sequence', 'ASC')
+            ->orderBy('id', 'ASC')
+            ->findAll();
+    }
+
+    private function syncPendingRemittanceForDelivery(int $deliveryId, array $deliveryPayload): ?array
     {
         $remittanceModel = new RemittanceModel();
         $existing = $remittanceModel->where('delivery_record_id', $deliveryId)->first();
-
-        $pendingPayload = array_fill_keys(array_keys($this->denominations), 0);
-        $pendingPayload = array_merge($pendingPayload, [
-            'rider_id' => (int) ($deliveryPayload['rider_id'] ?? 0),
-            'delivery_record_id' => $deliveryId,
-            'delivery_date' => (string) ($deliveryPayload['delivery_date'] ?? date('Y-m-d')),
-            'remittance_account_id' => ! empty($deliveryPayload['remittance_account_id']) ? (int) $deliveryPayload['remittance_account_id'] : null,
-            'cash_remitted' => 0,
-            'gcash_remitted' => 0,
-            'gcash_reference' => null,
-            'total_due' => (float) ($deliveryPayload['total_due'] ?? 0),
-            'total_remitted' => 0,
-            'supposed_remittance' => isset($deliveryPayload['expected_remittance']) ? (float) $deliveryPayload['expected_remittance'] : null,
-            'actual_remitted' => null,
-            'variance_amount' => 0,
-            'variance_type' => 'PENDING',
-        ]);
+        $entries = $existing ? $this->getRemittanceEntriesForSummary((int) $existing['id']) : [];
+        $summaryPayload = $this->buildRemittanceAggregatePayload(array_merge($deliveryPayload, ['delivery_record_id' => $deliveryId]), $entries);
 
         if ($existing) {
-            $remittanceModel->update((int) $existing['id'], $pendingPayload);
-            return;
+            $remittanceModel->update((int) $existing['id'], $summaryPayload);
+            return $remittanceModel->find((int) $existing['id']);
         }
 
-        $remittanceModel->insert($pendingPayload);
+        $remittanceId = (int) $remittanceModel->insert($summaryPayload);
+        return $remittanceModel->find($remittanceId);
     }
+
 
     private function formatRemittanceAccountLabel(array $row): string
     {

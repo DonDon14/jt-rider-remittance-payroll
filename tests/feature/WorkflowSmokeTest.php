@@ -271,6 +271,242 @@ final class WorkflowSmokeTest extends CIUnitTestCase
         $this->assertSame(2500.0, (float) $remittance['total_remitted']);
         $this->assertSame('BALANCED', $remittance['variance_type']);
     }
+
+    public function testSupplementalRemittanceAddsAnotherPieceWithoutOverwritingExistingCollection(): void
+    {
+        $db = db_connect();
+        $now = date('Y-m-d H:i:s');
+
+        $db->table('delivery_records')->insert([
+            'id' => 3,
+            'rider_id' => 3,
+            'delivery_date' => '2026-04-12',
+            'allocated_parcels' => 24,
+            'successful_deliveries' => 20,
+            'failed_deliveries' => 4,
+            'total_due' => 265.00,
+            'expected_remittance' => 3000.00,
+            'remittance_account_id' => 1,
+            'commission_rate' => 13.25,
+            'notes' => 'Supplemental remittance test.',
+            'entry_source' => 'RIDER_SUBMISSION',
+            'source_submission_id' => null,
+            'created_by_user_id' => 1,
+            'last_admin_reason' => 'Seeded for supplemental remittance test.',
+            'payroll_id' => null,
+            'created_at' => $now,
+            'updated_at' => $now,
+        ]);
+
+        $db->table('remittances')->insert([
+            'id' => 3,
+            'rider_id' => 3,
+            'delivery_record_id' => 3,
+            'delivery_date' => '2026-04-12',
+            'remittance_account_id' => 1,
+            'cash_remitted' => 2000.00,
+            'gcash_remitted' => 0.00,
+            'gcash_reference' => null,
+            'denom_025' => 0,
+            'denom_1' => 0,
+            'denom_5' => 0,
+            'denom_10' => 0,
+            'denom_20' => 0,
+            'denom_50' => 0,
+            'denom_100' => 0,
+            'denom_500' => 0,
+            'denom_1000' => 2,
+            'total_due' => 265.00,
+            'total_remitted' => 2000.00,
+            'supposed_remittance' => 3000.00,
+            'actual_remitted' => 2000.00,
+            'variance_amount' => 1000.00,
+            'variance_type' => 'SHORT',
+            'created_at' => $now,
+            'updated_at' => $now,
+        ]);
+
+        $db->table('remittance_entries')->insert([
+            'remittance_id' => 3,
+            'remittance_account_id' => 1,
+            'entry_type' => 'INITIAL',
+            'entry_sequence' => 1,
+            'cash_remitted' => 2000.00,
+            'gcash_remitted' => 0.00,
+            'gcash_reference' => null,
+            'denom_025' => 0,
+            'denom_1' => 0,
+            'denom_5' => 0,
+            'denom_10' => 0,
+            'denom_20' => 0,
+            'denom_50' => 0,
+            'denom_100' => 0,
+            'denom_500' => 0,
+            'denom_1000' => 2,
+            'total_remitted' => 2000.00,
+            'notes' => 'Initial collection.',
+            'created_by_user_id' => 1,
+            'created_at' => $now,
+            'updated_at' => $now,
+        ]);
+
+        $security = service('security');
+        $tokenName = $security->getTokenName();
+        $tokenHash = $security->generateHash();
+
+        $result = $this->withSession([
+            'isLoggedIn' => true,
+            'role' => 'admin',
+            'user_id' => 1,
+            'force_password_change' => false,
+            'username' => 'admin',
+        ])->post('/admin/remittance/3', [
+            $tokenName => $tokenHash,
+            'gcash_remitted' => '1000.00',
+            'gcash_reference' => 'GC-SUP-001',
+            'entry_notes' => 'Late customer handoff.',
+        ]);
+
+        $result->assertRedirect();
+        $result->assertRedirectTo(site_url('/admin/remittance/3'));
+
+        $remittance = $db->table('remittances')->where('id', 3)->get()->getRowArray();
+        $entryCount = $db->table('remittance_entries')->where('remittance_id', 3)->countAllResults();
+        $latestEntry = $db->table('remittance_entries')->where('remittance_id', 3)->orderBy('id', 'DESC')->get()->getRowArray();
+
+        $this->assertSame(2, $entryCount);
+        $this->assertSame('SUPPLEMENTAL', $latestEntry['entry_type']);
+        $this->assertSame(3000.0, (float) $remittance['total_remitted']);
+        $this->assertSame(2000.0, (float) $remittance['cash_remitted']);
+        $this->assertSame(1000.0, (float) $remittance['gcash_remitted']);
+        $this->assertSame('BALANCED', $remittance['variance_type']);
+    }
+
+    public function testApprovingLateSubmissionAfterCollectionMergesIntoExistingDeliveryDay(): void
+    {
+        $db = db_connect();
+        $now = date('Y-m-d H:i:s');
+
+        $db->table('delivery_records')->insert([
+            'id' => 4,
+            'rider_id' => 3,
+            'delivery_date' => '2026-04-13',
+            'allocated_parcels' => 10,
+            'successful_deliveries' => 9,
+            'failed_deliveries' => 1,
+            'total_due' => 119.25,
+            'expected_remittance' => 1500.00,
+            'remittance_account_id' => 1,
+            'commission_rate' => 13.25,
+            'notes' => 'Original day record.',
+            'entry_source' => 'RIDER_SUBMISSION',
+            'source_submission_id' => null,
+            'created_by_user_id' => 1,
+            'last_admin_reason' => 'Seeded for late submission merge.',
+            'payroll_id' => null,
+            'created_at' => $now,
+            'updated_at' => $now,
+        ]);
+
+        $db->table('remittances')->insert([
+            'id' => 4,
+            'rider_id' => 3,
+            'delivery_record_id' => 4,
+            'delivery_date' => '2026-04-13',
+            'remittance_account_id' => 1,
+            'cash_remitted' => 1500.00,
+            'gcash_remitted' => 0.00,
+            'gcash_reference' => null,
+            'denom_025' => 0,
+            'denom_1' => 0,
+            'denom_5' => 0,
+            'denom_10' => 0,
+            'denom_20' => 0,
+            'denom_50' => 0,
+            'denom_100' => 0,
+            'denom_500' => 1,
+            'denom_1000' => 1,
+            'total_due' => 119.25,
+            'total_remitted' => 1500.00,
+            'supposed_remittance' => 1500.00,
+            'actual_remitted' => 1500.00,
+            'variance_amount' => 0.00,
+            'variance_type' => 'BALANCED',
+            'created_at' => $now,
+            'updated_at' => $now,
+        ]);
+
+        $db->table('remittance_entries')->insert([
+            'remittance_id' => 4,
+            'remittance_account_id' => 1,
+            'entry_type' => 'INITIAL',
+            'entry_sequence' => 1,
+            'cash_remitted' => 1500.00,
+            'gcash_remitted' => 0.00,
+            'gcash_reference' => null,
+            'denom_025' => 0,
+            'denom_1' => 0,
+            'denom_5' => 0,
+            'denom_10' => 0,
+            'denom_20' => 0,
+            'denom_50' => 0,
+            'denom_100' => 0,
+            'denom_500' => 1,
+            'denom_1000' => 1,
+            'total_remitted' => 1500.00,
+            'notes' => 'Initial collection.',
+            'created_by_user_id' => 1,
+            'created_at' => $now,
+            'updated_at' => $now,
+        ]);
+
+        $db->table('delivery_submissions')->insert([
+            'id' => 5,
+            'rider_id' => 3,
+            'delivery_date' => '2026-04-13',
+            'allocated_parcels' => 2,
+            'successful_deliveries' => 2,
+            'failed_deliveries' => 0,
+            'expected_remittance' => 400.00,
+            'remittance_account_id' => 1,
+            'notes' => 'Late customer received parcel after first remittance.',
+            'status' => 'PENDING',
+            'processed_delivery_record_id' => null,
+            'created_at' => $now,
+            'updated_at' => $now,
+        ]);
+
+        $security = service('security');
+        $tokenName = $security->getTokenName();
+        $tokenHash = $security->generateHash();
+
+        $result = $this->withSession([
+            'isLoggedIn' => true,
+            'role' => 'admin',
+            'user_id' => 1,
+            'force_password_change' => false,
+            'username' => 'admin',
+        ])->post('/admin/delivery-submissions/5/approve', [
+            $tokenName => $tokenHash,
+            'commission_rate' => '13.25',
+        ]);
+
+        $result->assertRedirect();
+        $result->assertRedirectTo(site_url('/admin/remittance/4'));
+
+        $delivery = $db->table('delivery_records')->where('id', 4)->get()->getRowArray();
+        $submission = $db->table('delivery_submissions')->where('id', 5)->get()->getRowArray();
+        $remittance = $db->table('remittances')->where('id', 4)->get()->getRowArray();
+
+        $this->assertSame(12, (int) $delivery['allocated_parcels']);
+        $this->assertSame(11, (int) $delivery['successful_deliveries']);
+        $this->assertSame(1900.0, (float) $delivery['expected_remittance']);
+        $this->assertSame(145.75, (float) $delivery['total_due']);
+        $this->assertSame('APPROVED', $submission['status']);
+        $this->assertSame(4, (int) $submission['processed_delivery_record_id']);
+        $this->assertSame('SHORT', $remittance['variance_type']);
+        $this->assertSame(400.0, (float) $remittance['variance_amount']);
+    }
     public function testAdminGeneratePayrollLocksCoveredDeliveries(): void
     {
         $db = db_connect();
@@ -472,6 +708,7 @@ final class WorkflowSmokeTest extends CIUnitTestCase
             'delivery_audit_logs',
             'delivery_submissions',
             'shortage_payments',
+            'remittance_entries',
             'remittances',
             'delivery_records',
             'payrolls',
@@ -577,6 +814,30 @@ final class WorkflowSmokeTest extends CIUnitTestCase
             updated_at DATETIME NULL
         )');
 
+        $db->query('CREATE TABLE ' . $prefix . 'remittance_entries (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            remittance_id INTEGER NOT NULL,
+            remittance_account_id INTEGER NULL,
+            entry_type VARCHAR(20) NOT NULL DEFAULT \'INITIAL\',
+            entry_sequence INTEGER NOT NULL DEFAULT 1,
+            cash_remitted REAL NOT NULL DEFAULT 0,
+            gcash_remitted REAL NOT NULL DEFAULT 0,
+            gcash_reference VARCHAR(100) NULL,
+            denom_025 INTEGER NOT NULL DEFAULT 0,
+            denom_1 INTEGER NOT NULL DEFAULT 0,
+            denom_5 INTEGER NOT NULL DEFAULT 0,
+            denom_10 INTEGER NOT NULL DEFAULT 0,
+            denom_20 INTEGER NOT NULL DEFAULT 0,
+            denom_50 INTEGER NOT NULL DEFAULT 0,
+            denom_100 INTEGER NOT NULL DEFAULT 0,
+            denom_500 INTEGER NOT NULL DEFAULT 0,
+            denom_1000 INTEGER NOT NULL DEFAULT 0,
+            total_remitted REAL NOT NULL DEFAULT 0,
+            notes TEXT NULL,
+            created_by_user_id INTEGER NULL,
+            created_at DATETIME NULL,
+            updated_at DATETIME NULL
+        )');
         $db->query('CREATE TABLE ' . $prefix . 'shortage_payments (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             remittance_id INTEGER NOT NULL,
@@ -738,6 +999,10 @@ final class WorkflowSmokeTest extends CIUnitTestCase
         ]);
     }
 }
+
+
+
+
 
 
 

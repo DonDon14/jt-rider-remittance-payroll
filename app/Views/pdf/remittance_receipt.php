@@ -17,9 +17,11 @@
         .over { background: #dcfce7; color: #166534; }
         .balanced { background: #e0f2fe; color: #075985; }
         .pending { background: #fef3c7; color: #92400e; }
+        .muted { color: #4b5563; }
     </style>
 </head>
 <body>
+    <?php $entries = $entries ?? []; ?>
     <div class="branch-header">
         <div class="branch-title">J&amp;T Home Claveria Branch</div>
         <div class="branch-subtitle">Rider Remittance Record</div>
@@ -30,6 +32,49 @@
     <div>Date: <strong><?= esc($record['delivery_date']) ?></strong></div>
     <div>Remittance Account: <strong><?= esc(trim((string) ($record['remittance_account_name'] ?? '')) !== '' ? (($record['remittance_account_name'] ?? '') . (! empty($record['remittance_account_number']) ? ' (' . $record['remittance_account_number'] . ')' : '')) : '-') ?></strong></div>
 
+    <div class="summary">Expected Remittance: <strong>PHP <?= number_format((float) ($record['supposed_remittance'] ?? 0), 2) ?></strong></div>
+    <div class="summary">Salary Earning Snapshot: <strong>PHP <?= number_format((float) $record['total_due'], 2) ?></strong></div>
+    <div class="summary">Cash Remitted: <strong>PHP <?= number_format((float) ($record['cash_remitted'] ?? 0), 2) ?></strong></div>
+    <div class="summary">GCash Remitted: <strong>PHP <?= number_format((float) ($record['gcash_remitted'] ?? 0), 2) ?></strong></div>
+    <?php if (! empty($record['gcash_reference'])): ?>
+        <div class="summary">Latest GCash Reference: <strong><?= esc($record['gcash_reference']) ?></strong></div>
+    <?php endif; ?>
+    <div class="summary">Total Remitted: <strong>PHP <?= number_format((float) $record['total_remitted'], 2) ?></strong></div>
+
+    <div class="summary">
+        Status:
+        <span class="badge <?= strtolower((string) $record['variance_type']) ?>">
+            <?= esc((string) $record['variance_type']) ?> (PHP <?= number_format((float) ($record['variance_amount'] ?? 0), 2) ?>)
+        </span>
+    </div>
+
+    <h3 style="margin-top: 18px;">Remittance Piece Timeline</h3>
+    <table>
+        <thead><tr><th>#</th><th>Type</th><th>Cash</th><th>GCash</th><th>Total</th><th>Reference / Note</th><th>Recorded</th></tr></thead>
+        <tbody>
+            <?php foreach ($entries as $entry): ?>
+                <tr>
+                    <td><?= (int) ($entry['entry_sequence'] ?? 0) ?></td>
+                    <td><?= esc((string) ($entry['entry_type'] ?? 'ENTRY')) ?></td>
+                    <td>PHP <?= number_format((float) ($entry['cash_remitted'] ?? 0), 2) ?></td>
+                    <td>PHP <?= number_format((float) ($entry['gcash_remitted'] ?? 0), 2) ?></td>
+                    <td>PHP <?= number_format((float) ($entry['total_remitted'] ?? 0), 2) ?></td>
+                    <td>
+                        <div><?= esc((string) ($entry['gcash_reference'] ?? '-')) ?></div>
+                        <?php if (! empty($entry['notes'])): ?>
+                            <div class="muted"><?= esc((string) $entry['notes']) ?></div>
+                        <?php endif; ?>
+                    </td>
+                    <td><?= esc((string) ($entry['created_at'] ?? '-')) ?></td>
+                </tr>
+            <?php endforeach; ?>
+            <?php if ($entries === []): ?>
+                <tr><td colspan="7">No remittance pieces recorded yet.</td></tr>
+            <?php endif; ?>
+        </tbody>
+    </table>
+
+    <h3 style="margin-top: 18px;">Combined Cash Denominations</h3>
     <table>
         <thead><tr><th>Denomination</th><th>Quantity</th><th>Amount</th></tr></thead>
         <tbody>
@@ -43,24 +88,5 @@
             <?php endforeach; ?>
         </tbody>
     </table>
-
-    <div class="summary">Expected Remittance: <strong>PHP <?= number_format((float) ($record['supposed_remittance'] ?? 0), 2) ?></strong></div>
-    <div class="summary">Salary Earning Snapshot: <strong>PHP <?= number_format((float) $record['total_due'], 2) ?></strong></div>
-    <div class="summary">Cash Remitted: <strong>PHP <?= number_format((float) ($record['cash_remitted'] ?? 0), 2) ?></strong></div>
-    <div class="summary">GCash Remitted: <strong>PHP <?= number_format((float) ($record['gcash_remitted'] ?? 0), 2) ?></strong></div>
-    <?php if (! empty($record['gcash_reference'])): ?>
-        <div class="summary">GCash Reference: <strong><?= esc($record['gcash_reference']) ?></strong></div>
-    <?php endif; ?>
-    <div class="summary">Total Remitted: <strong>PHP <?= number_format((float) $record['total_remitted'], 2) ?></strong></div>
-
-    <div class="summary">
-        Status:
-        <span class="badge <?= strtolower($record['variance_type']) ?>">
-            <?= esc($record['variance_type']) ?> (PHP <?= number_format((float) $record['variance_amount'], 2) ?>)
-        </span>
-    </div>
 </body>
 </html>
-
-
-

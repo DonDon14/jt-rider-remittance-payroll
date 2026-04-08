@@ -343,7 +343,8 @@
 
     applySidebarState();
     window.addEventListener('message', (event) => {
-        if (!event.data || event.data.type !== 'remittance-saved') {
+        const messageType = event?.data?.type || '';
+        if (!['remittance-saved', 'submission-updated'].includes(messageType)) {
             return;
         }
 
