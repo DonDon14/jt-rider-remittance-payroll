@@ -75,9 +75,12 @@ $routes->group('api', static function ($routes) {
     $routes->post('logout', 'Api\AuthController::logout');
     $routes->post('logout-all', 'Api\AuthController::logoutAll');
     $routes->get('admin/pending-submissions', 'Api\AdminController::pendingSubmissions');
+    $routes->get('admin/pending-submissions/(:num)', 'Api\AdminController::pendingSubmissionDetail/$1');
     $routes->post('admin/pending-submissions/(:num)/approve', 'Api\AdminController::approveSubmission/$1');
     $routes->post('admin/pending-submissions/(:num)/reject', 'Api\AdminController::rejectSubmission/$1');
     $routes->get('admin/pending-remittances', 'Api\AdminController::pendingRemittances');
+    $routes->get('admin/remittances/(:num)', 'Api\AdminController::remittanceDetail/$1');
+    $routes->post('admin/remittances/(:num)/collect', 'Api\AdminController::saveRemittance/$1');
     $routes->get('admin/shortages', 'Api\AdminController::shortages');
     $routes->get('admin/payrolls', 'Api\AdminController::payrolls');
     $routes->post('admin/payrolls/(:num)/release', 'Api\AdminController::releasePayroll/$1');
@@ -90,6 +93,7 @@ $routes->group('api', static function ($routes) {
     $routes->post('rider/delivery-submissions', 'Api\RiderController::storeSubmission');
     $routes->post('rider/payroll/(:num)/confirm', 'Api\RiderController::confirmPayrollReceipt/$1');
 });
+
 
 
 

@@ -296,6 +296,168 @@ class AdminController extends BaseApiController
         return $this->successList($items, $pagination['page'], $pagination['per_page'], $total);
     }
 
+    public function pendingSubmissionDetail(int $submissionId)
+    {
+        $user = $this->requireApiUser('admin');
+        if (! is_array($user)) {
+            return $user;
+        }
+
+        $submission = $this->findSubmissionWithRelations($submissionId);
+        if (! $submission || ($submission['status'] ?? '') !== 'PENDING') {
+            return $this->response->setStatusCode(404)->setJSON([
+                'status' => 'error',
+                'message' => 'Delivery submission not found or already processed.',
+            ]);
+        }
+
+        return $this->success([
+            'submission' => $this->formatSubmissionRow($submission),
+        ]);
+    }
+
+    public function remittanceDetail(int $deliveryRecordId)
+    {
+        $user = $this->requireApiUser('admin');
+        if (! is_array($user)) {
+            return $user;
+        }
+
+        $delivery = (new DeliveryRecordModel())
+            ->select('delivery_records.*, riders.name, riders.rider_code, remittance_accounts.account_name AS remittance_account_name, remittance_accounts.account_number AS remittance_account_number')
+            ->join('riders', 'riders.id = delivery_records.rider_id')
+            ->join('remittance_accounts', 'remittance_accounts.id = delivery_records.remittance_account_id', 'left')
+            ->where('delivery_records.id', $deliveryRecordId)
+            ->first();
+
+        if (! $delivery) {
+            return $this->response->setStatusCode(404)->setJSON([
+                'status' => 'error',
+                'message' => 'Delivery record not found.',
+            ]);
+        }
+
+        $remittance = (new RemittanceModel())->where('delivery_record_id', $deliveryRecordId)->first();
+        $entries = $remittance ? $this->getRemittanceEntriesForSummary((int) $remittance['id']) : [];
+
+        return $this->success([
+            'delivery' => [
+                'id' => (int) $delivery['id'],
+                'delivery_date' => (string) $delivery['delivery_date'],
+                'allocated_parcels' => (int) ($delivery['allocated_parcels'] ?? 0),
+                'successful_deliveries' => (int) ($delivery['successful_deliveries'] ?? 0),
+                'failed_deliveries' => (int) ($delivery['failed_deliveries'] ?? 0),
+                'expected_remittance' => round((float) ($delivery['expected_remittance'] ?? 0), 2),
+                'total_due' => round((float) ($delivery['total_due'] ?? 0), 2),
+                'rider' => [
+                    'id' => (int) $delivery['rider_id'],
+                    'rider_code' => (string) ($delivery['rider_code'] ?? ''),
+                    'name' => (string) ($delivery['name'] ?? ''),
+                ],
+                'remittance_account' => [
+                    'id' => ! empty($delivery['remittance_account_id']) ? (int) $delivery['remittance_account_id'] : null,
+                    'name' => (string) ($delivery['remittance_account_name'] ?? ''),
+                    'number' => (string) ($delivery['remittance_account_number'] ?? ''),
+                ],
+            ],
+            'remittance' => $remittance ? [
+                'id' => (int) $remittance['id'],
+                'cash_remitted' => round((float) ($remittance['cash_remitted'] ?? 0), 2),
+                'gcash_remitted' => round((float) ($remittance['gcash_remitted'] ?? 0), 2),
+                'total_remitted' => round((float) ($remittance['total_remitted'] ?? 0), 2),
+                'supposed_remittance' => round((float) ($remittance['supposed_remittance'] ?? 0), 2),
+                'variance_amount' => round((float) ($remittance['variance_amount'] ?? 0), 2),
+                'variance_type' => (string) ($remittance['variance_type'] ?? 'PENDING'),
+                'gcash_reference' => (string) ($remittance['gcash_reference'] ?? ''),
+            ] : null,
+            'entries' => array_map(fn (array $entry): array => $this->formatEntryRow($entry), $entries),
+            'denominations' => $this->denominations,
+        ]);
+    }
+
+    public function saveRemittance(int $deliveryRecordId)
+    {
+        $user = $this->requireApiUser('admin');
+        if (! is_array($user)) {
+            return $user;
+        }
+
+        $delivery = (new DeliveryRecordModel())->find($deliveryRecordId);
+        if (! $delivery) {
+            return $this->response->setStatusCode(404)->setJSON([
+                'status' => 'error',
+                'message' => 'Delivery record not found.',
+            ]);
+        }
+
+        $payload = $this->request->getJSON(true);
+        if (! is_array($payload)) {
+            $payload = $this->request->getPost();
+        }
+
+        $totals = $this->calculateRemittanceTotalsFromPayload($payload);
+        $cashInput = trim((string) ($payload['cash_remitted'] ?? ''));
+        $gcashInput = trim((string) ($payload['gcash_remitted'] ?? ''));
+        $gcashReference = trim((string) ($payload['gcash_reference'] ?? ''));
+        $entryNotes = trim((string) ($payload['entry_notes'] ?? ''));
+        $cashRemitted = $totals['cash_total'] > 0
+            ? $totals['cash_total']
+            : ($cashInput === '' ? 0.0 : (float) $cashInput);
+        $gcashRemitted = $gcashInput === '' ? 0.0 : (float) $gcashInput;
+
+        if ($cashRemitted < 0 || $gcashRemitted < 0) {
+            return $this->response->setStatusCode(422)->setJSON([
+                'status' => 'error',
+                'message' => 'Remittance amounts cannot be negative.',
+            ]);
+        }
+
+        $entryTotal = round($cashRemitted + $gcashRemitted, 2);
+        if ($entryTotal <= 0) {
+            return $this->response->setStatusCode(422)->setJSON([
+                'status' => 'error',
+                'message' => 'Enter the cash, GCash, or denomination counts for the remittance piece you are recording.',
+            ]);
+        }
+
+        $summary = $this->syncPendingRemittanceForDelivery($deliveryRecordId, array_merge($delivery, ['delivery_record_id' => $deliveryRecordId]));
+        if (! $summary) {
+            return $this->response->setStatusCode(500)->setJSON([
+                'status' => 'error',
+                'message' => 'Unable to prepare the remittance summary for this delivery day.',
+            ]);
+        }
+
+        $entryModel = new RemittanceEntryModel();
+        $existingEntries = $this->getRemittanceEntriesForSummary((int) $summary['id']);
+        $entryModel->insert(array_merge($totals['denoms'], [
+            'remittance_id' => (int) $summary['id'],
+            'remittance_account_id' => ! empty($delivery['remittance_account_id']) ? (int) $delivery['remittance_account_id'] : null,
+            'entry_type' => $existingEntries === [] ? 'INITIAL' : 'SUPPLEMENTAL',
+            'entry_sequence' => count($existingEntries) + 1,
+            'cash_remitted' => $cashRemitted,
+            'gcash_remitted' => $gcashRemitted,
+            'gcash_reference' => $gcashReference !== '' ? $gcashReference : null,
+            'total_remitted' => $entryTotal,
+            'notes' => $entryNotes !== '' ? $entryNotes : null,
+            'created_by_user_id' => (int) $user['id'],
+        ]));
+
+        $updatedRemittance = $this->syncPendingRemittanceForDelivery($deliveryRecordId, array_merge($delivery, ['delivery_record_id' => $deliveryRecordId]));
+
+        return $this->success([
+            'message' => count($existingEntries) > 0 ? 'Supplemental remittance recorded.' : 'Remittance saved.',
+            'remittance' => $updatedRemittance ? [
+                'id' => (int) $updatedRemittance['id'],
+                'cash_remitted' => round((float) ($updatedRemittance['cash_remitted'] ?? 0), 2),
+                'gcash_remitted' => round((float) ($updatedRemittance['gcash_remitted'] ?? 0), 2),
+                'total_remitted' => round((float) ($updatedRemittance['total_remitted'] ?? 0), 2),
+                'variance_amount' => round((float) ($updatedRemittance['variance_amount'] ?? 0), 2),
+                'variance_type' => (string) ($updatedRemittance['variance_type'] ?? 'PENDING'),
+            ] : null,
+            'entries' => array_map(fn (array $entry): array => $this->formatEntryRow($entry), $this->getRemittanceEntriesForSummary((int) ($updatedRemittance['id'] ?? $summary['id']))),
+        ]);
+    }
     public function shortages()
     {
         $user = $this->requireApiUser('admin');
@@ -439,4 +601,175 @@ class AdminController extends BaseApiController
 
         return $this->success(['message' => 'Payroll marked as released.']);
     }
+    private function findSubmissionWithRelations(int $submissionId): ?array
+    {
+        return (new DeliverySubmissionModel())
+            ->select('delivery_submissions.*, riders.name, riders.rider_code, riders.commission_rate, remittance_accounts.account_name AS remittance_account_name, remittance_accounts.account_number AS remittance_account_number')
+            ->join('riders', 'riders.id = delivery_submissions.rider_id')
+            ->join('remittance_accounts', 'remittance_accounts.id = delivery_submissions.remittance_account_id', 'left')
+            ->where('delivery_submissions.id', $submissionId)
+            ->first();
+    }
+
+    private function formatSubmissionRow(array $row): array
+    {
+        return [
+            'id' => (int) $row['id'],
+            'delivery_date' => (string) $row['delivery_date'],
+            'rider' => [
+                'id' => (int) $row['rider_id'],
+                'rider_code' => (string) ($row['rider_code'] ?? ''),
+                'name' => (string) ($row['name'] ?? ''),
+            ],
+            'allocated_parcels' => (int) ($row['allocated_parcels'] ?? 0),
+            'successful_deliveries' => (int) ($row['successful_deliveries'] ?? 0),
+            'failed_deliveries' => (int) ($row['failed_deliveries'] ?? 0),
+            'expected_remittance' => round((float) ($row['expected_remittance'] ?? 0), 2),
+            'commission_rate' => round((float) ($row['commission_rate'] ?? 0), 2),
+            'notes' => (string) ($row['notes'] ?? ''),
+            'remittance_account' => [
+                'id' => ! empty($row['remittance_account_id']) ? (int) $row['remittance_account_id'] : null,
+                'name' => (string) ($row['remittance_account_name'] ?? ''),
+                'number' => (string) ($row['remittance_account_number'] ?? ''),
+            ],
+        ];
+    }
+
+    private function calculateRemittanceTotalsFromPayload(array $payload): array
+    {
+        $cashTotal = 0.0;
+        $counts = [];
+        foreach ($this->denominations as $field => $value) {
+            $count = max(0, (int) ($payload[$field] ?? 0));
+            $counts[$field] = $count;
+            $cashTotal += $count * $value;
+        }
+
+        return [
+            'cash_total' => round($cashTotal, 2),
+            'denoms' => $counts,
+        ];
+    }
+
+    private function buildRemittanceAggregatePayload(array $deliveryPayload, array $entries): array
+    {
+        $denomTotals = array_fill_keys(array_keys($this->denominations), 0);
+        $cashRemitted = 0.0;
+        $gcashRemitted = 0.0;
+        $latestReference = null;
+
+        foreach ($entries as $entry) {
+            foreach (array_keys($this->denominations) as $field) {
+                $denomTotals[$field] += (int) ($entry[$field] ?? 0);
+            }
+
+            $cashRemitted += (float) ($entry['cash_remitted'] ?? 0);
+            $gcashRemitted += (float) ($entry['gcash_remitted'] ?? 0);
+            $reference = trim((string) ($entry['gcash_reference'] ?? ''));
+            if ($reference !== '') {
+                $latestReference = $reference;
+            }
+        }
+
+        $supposedRemittance = isset($deliveryPayload['expected_remittance']) ? (float) $deliveryPayload['expected_remittance'] : null;
+        $totalRemitted = round($cashRemitted + $gcashRemitted, 2);
+        $variance = 0.0;
+        $varianceType = 'PENDING';
+        $actualRemitted = null;
+
+        if ($entries !== []) {
+            $actualRemitted = $totalRemitted;
+            if ($supposedRemittance !== null) {
+                $variance = round($totalRemitted - $supposedRemittance, 2);
+                $varianceType = 'BALANCED';
+                if ($variance > 0.005) {
+                    $varianceType = 'OVER';
+                } elseif ($variance < -0.005) {
+                    $varianceType = 'SHORT';
+                }
+            }
+        }
+
+        return array_merge($denomTotals, [
+            'rider_id' => (int) ($deliveryPayload['rider_id'] ?? 0),
+            'delivery_record_id' => (int) ($deliveryPayload['delivery_record_id'] ?? 0),
+            'delivery_date' => (string) ($deliveryPayload['delivery_date'] ?? date('Y-m-d')),
+            'remittance_account_id' => ! empty($deliveryPayload['remittance_account_id']) ? (int) $deliveryPayload['remittance_account_id'] : null,
+            'cash_remitted' => round($cashRemitted, 2),
+            'gcash_remitted' => round($gcashRemitted, 2),
+            'gcash_reference' => $latestReference,
+            'total_due' => round((float) ($deliveryPayload['total_due'] ?? 0), 2),
+            'total_remitted' => $entries === [] ? 0.0 : $totalRemitted,
+            'supposed_remittance' => $supposedRemittance,
+            'actual_remitted' => $actualRemitted,
+            'variance_amount' => abs($variance),
+            'variance_type' => $varianceType,
+        ]);
+    }
+
+    private function getRemittanceEntriesForSummary(int $remittanceId): array
+    {
+        return (new RemittanceEntryModel())
+            ->select('remittance_entries.*, remittance_accounts.account_name AS remittance_account_name, remittance_accounts.account_number AS remittance_account_number')
+            ->join('remittance_accounts', 'remittance_accounts.id = remittance_entries.remittance_account_id', 'left')
+            ->where('remittance_id', $remittanceId)
+            ->orderBy('entry_sequence', 'ASC')
+            ->orderBy('id', 'ASC')
+            ->findAll();
+    }
+
+    private function syncPendingRemittanceForDelivery(int $deliveryId, array $deliveryPayload): ?array
+    {
+        $remittanceModel = new RemittanceModel();
+        $existing = $remittanceModel->where('delivery_record_id', $deliveryId)->first();
+        $entries = $existing ? $this->getRemittanceEntriesForSummary((int) $existing['id']) : [];
+        $summaryPayload = $this->buildRemittanceAggregatePayload(array_merge($deliveryPayload, ['delivery_record_id' => $deliveryId]), $entries);
+
+        if ($existing) {
+            $remittanceModel->update((int) $existing['id'], $summaryPayload);
+            return $remittanceModel->find((int) $existing['id']);
+        }
+
+        $remittanceId = (int) $remittanceModel->insert($summaryPayload);
+        return $remittanceModel->find($remittanceId);
+    }
+
+    private function formatEntryRow(array $entry): array
+    {
+        $denoms = [];
+        foreach (array_keys($this->denominations) as $field) {
+            $denoms[$field] = (int) ($entry[$field] ?? 0);
+        }
+
+        return [
+            'id' => (int) $entry['id'],
+            'entry_type' => (string) ($entry['entry_type'] ?? 'ENTRY'),
+            'entry_sequence' => (int) ($entry['entry_sequence'] ?? 0),
+            'cash_remitted' => round((float) ($entry['cash_remitted'] ?? 0), 2),
+            'gcash_remitted' => round((float) ($entry['gcash_remitted'] ?? 0), 2),
+            'gcash_reference' => (string) ($entry['gcash_reference'] ?? ''),
+            'total_remitted' => round((float) ($entry['total_remitted'] ?? 0), 2),
+            'notes' => (string) ($entry['notes'] ?? ''),
+            'created_at' => (string) ($entry['created_at'] ?? ''),
+            'remittance_account' => [
+                'id' => ! empty($entry['remittance_account_id']) ? (int) $entry['remittance_account_id'] : null,
+                'name' => (string) ($entry['remittance_account_name'] ?? ''),
+                'number' => (string) ($entry['remittance_account_number'] ?? ''),
+            ],
+            'denominations' => $denoms,
+        ];
+    }
+
+    private function formatRemittanceAccountLabel(array $row): string
+    {
+        $name = trim((string) ($row['remittance_account_name'] ?? ''));
+        $number = trim((string) ($row['remittance_account_number'] ?? ''));
+
+        if ($name === '' && $number === '') {
+            return '';
+        }
+
+        return $number !== '' ? $name . ' (' . $number . ')' : $name;
+    }
 }
+

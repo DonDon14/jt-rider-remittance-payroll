@@ -66,10 +66,16 @@ class ApiClient {
     return _paginated(json);
   }
 
-  Future<void> approveSubmission(String token, int id, double commissionRate) async {
-    await postAuthed('admin/pending-submissions/$id/approve', token, body: {
+  Future<Map<String, dynamic>> fetchPendingSubmissionDetail(String token, int id) async {
+    final json = await getAuthed('admin/pending-submissions/$id', token);
+    return (json['data'] as Map<String, dynamic>? ?? <String, dynamic>{});
+  }
+
+  Future<Map<String, dynamic>> approveSubmission(String token, int id, double commissionRate) async {
+    final json = await postAuthed('admin/pending-submissions/$id/approve', token, body: {
       'commission_rate': commissionRate,
     });
+    return (json['data'] as Map<String, dynamic>? ?? <String, dynamic>{});
   }
 
   Future<void> rejectSubmission(String token, int id, String rejectionNote) async {
@@ -81,6 +87,20 @@ class ApiClient {
   Future<PaginatedResponse> fetchPendingRemittances(String token, {int page = 1}) async {
     final json = await getAuthed('admin/pending-remittances', token, query: _pageQuery(page));
     return _paginated(json);
+  }
+
+  Future<Map<String, dynamic>> fetchRemittanceDetail(String token, int deliveryRecordId) async {
+    final json = await getAuthed('admin/remittances/$deliveryRecordId', token);
+    return (json['data'] as Map<String, dynamic>? ?? <String, dynamic>{});
+  }
+
+  Future<Map<String, dynamic>> saveRemittance(
+    String token,
+    int deliveryRecordId, {
+    required Map<String, dynamic> body,
+  }) async {
+    final json = await postAuthed('admin/remittances/$deliveryRecordId/collect', token, body: body);
+    return (json['data'] as Map<String, dynamic>? ?? <String, dynamic>{});
   }
 
   Future<PaginatedResponse> fetchShortages(String token, {int page = 1}) async {
