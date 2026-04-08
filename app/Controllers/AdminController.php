@@ -391,6 +391,40 @@ class AdminController extends BaseController
             ];
         }
 
+        $openDeliveryEarnings = round((float) ((new DeliveryRecordModel())
+            ->selectSum('total_due')
+            ->where('payroll_id', null)
+            ->first()['total_due'] ?? 0), 2);
+        $openShortageDeductions = round((float) ((new RemittanceModel())
+            ->selectSum('variance_amount')
+            ->join('delivery_records', 'delivery_records.id = remittances.delivery_record_id')
+            ->where('remittances.variance_type', 'SHORT')
+            ->where('delivery_records.payroll_id', null)
+            ->first()['variance_amount'] ?? 0), 2);
+        $openRepayments = round((float) ((new ShortagePaymentModel())
+            ->selectSum('amount')
+            ->where('payroll_id', null)
+            ->first()['amount'] ?? 0), 2);
+        $openBonusTotal = round((float) ((new PayrollAdjustmentModel())
+            ->selectSum('amount')
+            ->where('payroll_id', null)
+            ->where('type', 'BONUS')
+            ->first()['amount'] ?? 0), 2);
+        $openDeductionTotal = round((float) ((new PayrollAdjustmentModel())
+            ->selectSum('amount')
+            ->where('payroll_id', null)
+            ->where('type', 'DEDUCTION')
+            ->first()['amount'] ?? 0), 2);
+        $unbatchedPayables = round($openDeliveryEarnings - $openShortageDeductions + $openRepayments + $openBonusTotal - $openDeductionTotal, 2);
+        $totalOutstandingPayables = round($unbatchedPayables + (float) ($payoutSummary['GENERATED']['net_total'] ?? 0) + (float) ($payoutSummary['RELEASED']['net_total'] ?? 0), 2);
+        $payablesSummary = [
+            'unbatched' => $unbatchedPayables,
+            'generated' => round((float) ($payoutSummary['GENERATED']['net_total'] ?? 0), 2),
+            'released' => round((float) ($payoutSummary['RELEASED']['net_total'] ?? 0), 2),
+            'received' => round((float) ($payoutSummary['RECEIVED']['net_total'] ?? 0), 2),
+            'total_outstanding' => $totalOutstandingPayables,
+        ];
+
         [$defaultStart, $defaultEnd, $defaultCutoff] = $this->getCutoffWindow(date('Y-m'), (int) date('j') <= 15 ? 'FIRST' : 'SECOND');
 
         return view('admin/payroll', array_merge(
@@ -402,6 +436,7 @@ class AdminController extends BaseController
                 'defaultCutoff' => $defaultCutoff,
                 'cutoffSummaries' => $cutoffSummaries,
                 'payoutSummary' => $payoutSummary,
+                'payablesSummary' => $payablesSummary,
                 'selectedRiderId' => $selectedRiderId,
                 'selectedPayrollMonth' => $selectedPayrollMonth,
                 'selectedCutoff' => $selectedCutoff,
@@ -2563,4 +2598,7 @@ class AdminController extends BaseController
         }));
     }
 }
+
+
+
 

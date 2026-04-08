@@ -82,16 +82,64 @@ class RiderController extends BaseController
             $outstandingShortageBalance += max(0, round((float) $shortage['variance_amount'] - $paidTotal, 2));
         }
 
+        $paidDeliveries = array_values(array_filter($deliveries, static fn (array $delivery): bool => ! empty($delivery['payroll_id'])));
+        $unpaidDeliveries = array_values(array_filter($deliveries, static fn (array $delivery): bool => empty($delivery['payroll_id'])));
+        $paidDeliveryIds = array_map(static fn (array $delivery): int => (int) $delivery['id'], $paidDeliveries);
+        $unpaidDeliveryIds = array_map(static fn (array $delivery): int => (int) $delivery['id'], $unpaidDeliveries);
+        $paidDeliveryIdLookup = array_flip($paidDeliveryIds);
+        $unpaidDeliveryIdLookup = array_flip($unpaidDeliveryIds);
+
+        $paidShortageDeductions = round(array_sum(array_map(static function (array $remittance) use ($paidDeliveryIdLookup): float {
+            if (($remittance['variance_type'] ?? '') !== 'SHORT') {
+                return 0.0;
+            }
+
+            return isset($paidDeliveryIdLookup[(int) ($remittance['delivery_record_id'] ?? 0)])
+                ? (float) ($remittance['variance_amount'] ?? 0)
+                : 0.0;
+        }, $remittances)), 2);
+        $currentShortageDeductions = round(array_sum(array_map(static function (array $remittance) use ($unpaidDeliveryIdLookup): float {
+            if (($remittance['variance_type'] ?? '') !== 'SHORT') {
+                return 0.0;
+            }
+
+            return isset($unpaidDeliveryIdLookup[(int) ($remittance['delivery_record_id'] ?? 0)])
+                ? (float) ($remittance['variance_amount'] ?? 0)
+                : 0.0;
+        }, $remittances)), 2);
+        $paidRepayments = round((float) ((new ShortagePaymentModel())
+            ->selectSum('amount')
+            ->where('rider_id', $riderId)
+            ->where('payment_date >=', $monthStart)
+            ->where('payment_date <=', $monthEnd)
+            ->where('payroll_id IS NOT NULL', null, false)
+            ->first()['amount'] ?? 0), 2);
+        $currentRepayments = round((float) ((new ShortagePaymentModel())
+            ->selectSum('amount')
+            ->where('rider_id', $riderId)
+            ->where('payment_date >=', $monthStart)
+            ->where('payment_date <=', $monthEnd)
+            ->where('payroll_id', null)
+            ->first()['amount'] ?? 0), 2);
+        $monthEarnings = round(array_sum(array_column($deliveries, 'total_due')), 2);
+        $currentPayable = round(array_sum(array_column($unpaidDeliveries, 'total_due')), 2);
+        $paidEarnings = round(array_sum(array_column($paidDeliveries, 'total_due')), 2);
+
         $stats = [
             'allocated' => array_sum(array_column($deliveries, 'allocated_parcels')),
             'successful' => array_sum(array_column($deliveries, 'successful_deliveries')),
             'failed' => array_sum(array_column($deliveries, 'failed_deliveries')),
-            'running_salary' => round(array_sum(array_column($deliveries, 'total_due')), 2),
+            'month_earnings' => $monthEarnings,
+            'running_salary' => $currentPayable,
+            'current_payable' => $currentPayable,
+            'paid_earnings' => $paidEarnings,
             'expected_remittance' => round(array_sum(array_map(static fn (array $delivery): float => (float) ($delivery['expected_remittance'] ?? 0), $deliveries)), 2),
             'total_remitted' => round(array_sum(array_map(static fn (array $remittance): float => (float) ($remittance['total_remitted'] ?? 0), $remittances)), 2),
-            'shortage_deductions' => $monthlyShortageDeductions,
-            'shortage_repayments' => $monthlyRepayments,
-            'projected_net' => round(array_sum(array_column($deliveries, 'total_due')) - $monthlyShortageDeductions + $monthlyRepayments, 2),
+            'shortage_deductions' => $currentShortageDeductions,
+            'shortage_repayments' => $currentRepayments,
+            'paid_shortage_deductions' => $paidShortageDeductions,
+            'paid_shortage_repayments' => $paidRepayments,
+            'projected_net' => round($currentPayable - $currentShortageDeductions + $currentRepayments, 2),
             'outstanding_shortage_balance' => round($outstandingShortageBalance, 2),
         ];
 
@@ -370,3 +418,4 @@ class RiderController extends BaseController
         return $number !== '' ? $label . ' (' . $number . ')' : $label;
     }
 }
+

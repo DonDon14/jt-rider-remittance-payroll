@@ -53,7 +53,25 @@
 </div>
 
 <div class="row g-3 mb-3">
-    <div class="col-md-4">
+    <div class="col-md-3">
+        <div class="card stat-card border-dark">
+            <div class="card-body">
+                <div class="stat-label">Total Payables Outstanding</div>
+                <div class="stat-value">PHP <?= number_format((float) ($payablesSummary['total_outstanding'] ?? 0), 2) ?></div>
+                <div class="text-muted">Unbatched payables plus generated and released payroll not yet rider-confirmed.</div>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="card stat-card">
+            <div class="card-body">
+                <div class="stat-label">Unbatched Payables</div>
+                <div class="stat-value">PHP <?= number_format((float) ($payablesSummary['unbatched'] ?? 0), 2) ?></div>
+                <div class="text-muted">Unlocked delivery earnings and adjustments not yet in a payroll run.</div>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3">
         <div class="card stat-card">
             <div class="card-body">
                 <div class="stat-label">Generated Payrolls</div>
@@ -62,7 +80,7 @@
             </div>
         </div>
     </div>
-    <div class="col-md-4">
+    <div class="col-md-3">
         <div class="card stat-card">
             <div class="card-body">
                 <div class="stat-label">Released Payrolls</div>
@@ -71,6 +89,9 @@
             </div>
         </div>
     </div>
+</div>
+
+<div class="row g-3 mb-3">
     <div class="col-md-4">
         <div class="card stat-card">
             <div class="card-body">
@@ -327,6 +348,7 @@ document.addEventListener('DOMContentLoaded', () => {
 });
 </script>
 <?= $this->endSection() ?>
+
 
 
 

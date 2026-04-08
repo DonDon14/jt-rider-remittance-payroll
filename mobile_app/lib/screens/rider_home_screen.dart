@@ -101,11 +101,13 @@ class _OverviewTabState extends State<_OverviewTab> {
 
           final data = snapshot.data!['data'] as Map<String, dynamic>;
           final stats = data['stats'] as Map<String, dynamic>? ?? <String, dynamic>{};
-          final runningSalary = _currency(stats['running_salary']);
+          final runningSalary = _currency(stats['current_payable'] ?? stats['running_salary']);
           final cards = <MapEntry<String, String>>[
             MapEntry('Allocated', '${stats['allocated'] ?? 0}'),
             MapEntry('Successful', '${stats['successful'] ?? 0}'),
             MapEntry('Failed', '${stats['failed'] ?? 0}'),
+            MapEntry('Total Earned This Month', _currency(stats['month_earnings'])),
+            MapEntry('Already In Payroll', _currency(stats['paid_earnings'])),
             MapEntry('Expected Remittance', _currency(stats['expected_remittance'])),
             MapEntry('Total Remitted', _currency(stats['total_remitted'])),
             MapEntry('Shortage Deductions', _currency(stats['shortage_deductions'])),
@@ -126,7 +128,7 @@ class _OverviewTabState extends State<_OverviewTab> {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text(
-                        'Running Salary',
+                        'Current Payable',
                         style: Theme.of(context).textTheme.labelLarge?.copyWith(
                           color: Theme.of(context).colorScheme.onPrimaryContainer,
                           fontWeight: FontWeight.w700,
@@ -143,7 +145,7 @@ class _OverviewTabState extends State<_OverviewTab> {
                       ),
                       const SizedBox(height: 8),
                       Text(
-                        'Current salary total from successful deliveries before deductions.',
+                        'Unpaid delivery earnings for this month. Paid salary stays in Payroll history.',
                         style: Theme.of(context).textTheme.bodyMedium?.copyWith(
                           color: Theme.of(context).colorScheme.onPrimaryContainer,
                         ),
@@ -520,3 +522,4 @@ String _currency(dynamic value) {
   final amount = double.tryParse(value.toString()) ?? 0;
   return 'PHP ${amount.toStringAsFixed(2)}';
 }
+

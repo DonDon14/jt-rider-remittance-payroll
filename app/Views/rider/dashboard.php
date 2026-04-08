@@ -36,7 +36,7 @@ $formatAccountLabel = static function (array $row): string {
         </div>
         <div class="d-flex gap-2 flex-wrap">
             <div class="badge text-bg-light px-3 py-2">Month: <?= esc(date('F Y', strtotime($month . '-01'))) ?></div>
-            <div class="badge text-bg-dark px-3 py-2">Projected Net: PHP <?= number_format((float) $stats['projected_net'], 2) ?></div>
+            <div class="badge text-bg-dark px-3 py-2">Current Payable Net: PHP <?= number_format((float) $stats['projected_net'], 2) ?></div>
         </div>
     </div>
 </div>
@@ -73,23 +73,30 @@ $formatAccountLabel = static function (array $row): string {
     <div class="tab-pane fade show active" id="overview-pane" role="tabpanel" aria-labelledby="overview-tab" tabindex="0">
         <div class="card salary-focus-card mb-3">
             <div class="card-body">
-                <div class="stat-label">Running Salary For <?= esc(date('F Y', strtotime($month . '-01'))) ?></div>
-                <div class="salary-focus-value">PHP <?= number_format((float) $stats['running_salary'], 2) ?></div>
-                <div class="text-muted">This is the current salary total from successful deliveries before deductions and added repayments.</div>
+                <div class="stat-label">Current Payable For <?= esc(date('F Y', strtotime($month . '-01'))) ?></div>
+                <div class="salary-focus-value">PHP <?= number_format((float) $stats['current_payable'], 2) ?></div>
+                <div class="text-muted">This is the unpaid delivery earnings for the month. Paid or released salary stays in Payroll History.</div>
             </div>
         </div>
 
         <div class="row g-3 mb-3">
             <div class="col-md-3"><div class="card stat-card"><div class="card-body"><div class="stat-label">Allocated</div><div class="stat-value"><?= (int) $stats['allocated'] ?></div></div></div></div>
             <div class="col-md-3"><div class="card stat-card"><div class="card-body"><div class="stat-label">Successful</div><div class="stat-value"><?= (int) $stats['successful'] ?></div></div></div></div>
-            <div class="col-md-3"><div class="card stat-card"><div class="card-body"><div class="stat-label">Expected Remittance</div><div class="stat-value">PHP <?= number_format((float) $stats['expected_remittance'], 2) ?></div></div></div></div>
-            <div class="col-md-3"><div class="card stat-card"><div class="card-body"><div class="stat-label">Outstanding Shortage</div><div class="stat-value">PHP <?= number_format((float) $stats['outstanding_shortage_balance'], 2) ?></div></div></div></div>
+            <div class="col-md-3"><div class="card stat-card"><div class="card-body"><div class="stat-label">Total Earned This Month</div><div class="stat-value">PHP <?= number_format((float) $stats['month_earnings'], 2) ?></div></div></div></div>
+            <div class="col-md-3"><div class="card stat-card"><div class="card-body"><div class="stat-label">Already In Payroll</div><div class="stat-value">PHP <?= number_format((float) $stats['paid_earnings'], 2) ?></div></div></div></div>
+        </div>
+
+        <div class="row g-3 mb-3">
+            <div class="col-md-3"><div class="card"><div class="card-body"><div class="stat-label">Expected Remittance</div><div class="stat-value">PHP <?= number_format((float) $stats['expected_remittance'], 2) ?></div></div></div></div>
+            <div class="col-md-3"><div class="card"><div class="card-body"><div class="stat-label">Total Remitted</div><div class="stat-value">PHP <?= number_format((float) $stats['total_remitted'], 2) ?></div></div></div></div>
+            <div class="col-md-3"><div class="card"><div class="card-body"><div class="stat-label">Current Shortage Deductions</div><div class="stat-value">PHP <?= number_format((float) $stats['shortage_deductions'], 2) ?></div></div></div></div>
+            <div class="col-md-3"><div class="card"><div class="card-body"><div class="stat-label">Current Repayments</div><div class="stat-value">PHP <?= number_format((float) $stats['shortage_repayments'], 2) ?></div></div></div></div>
         </div>
 
         <div class="row g-3">
-            <div class="col-md-4"><div class="card"><div class="card-body"><div class="stat-label">Total Remitted</div><div class="stat-value">PHP <?= number_format((float) $stats['total_remitted'], 2) ?></div></div></div></div>
-            <div class="col-md-4"><div class="card"><div class="card-body"><div class="stat-label">Month Shortage Deductions</div><div class="stat-value">PHP <?= number_format((float) $stats['shortage_deductions'], 2) ?></div></div></div></div>
-            <div class="col-md-4"><div class="card"><div class="card-body"><div class="stat-label">Month Repayments</div><div class="stat-value">PHP <?= number_format((float) $stats['shortage_repayments'], 2) ?></div></div></div></div>
+            <div class="col-md-4"><div class="card"><div class="card-body"><div class="stat-label">Outstanding Shortage Balance</div><div class="stat-value">PHP <?= number_format((float) $stats['outstanding_shortage_balance'], 2) ?></div></div></div></div>
+            <div class="col-md-4"><div class="card"><div class="card-body"><div class="stat-label">Payroll-Locked Shortage Deductions</div><div class="stat-value">PHP <?= number_format((float) ($stats['paid_shortage_deductions'] ?? 0), 2) ?></div></div></div></div>
+            <div class="col-md-4"><div class="card"><div class="card-body"><div class="stat-label">Payroll-Locked Repayments</div><div class="stat-value">PHP <?= number_format((float) ($stats['paid_shortage_repayments'] ?? 0), 2) ?></div></div></div></div>
         </div>
     </div>
 
@@ -154,7 +161,7 @@ $formatAccountLabel = static function (array $row): string {
 
     <div class="tab-pane fade" id="payroll-pane" role="tabpanel" aria-labelledby="payroll-tab" tabindex="0">
         <div class="card">
-            <div class="card-header fw-semibold">Recent Payroll History</div>
+            <div class="card-header fw-semibold d-flex justify-content-between align-items-center"><span>Recent Payroll History</span><span class="small text-muted">Paid salary stays here after release or receipt</span></div>
             <div class="list-group list-group-flush">
                 <?php foreach ($payrollHistory as $payroll): ?>
                     <?php $payrollStatus = (string) ($payroll['payroll_status'] ?? 'GENERATED'); ?>
@@ -312,3 +319,5 @@ document.addEventListener('DOMContentLoaded', () => {
 </script>
 <?php endif; ?>
 <?= $this->endSection() ?>
+
+
