@@ -101,6 +101,7 @@ class _OverviewTabState extends State<_OverviewTab> {
 
           final data = snapshot.data!['data'] as Map<String, dynamic>;
           final stats = data['stats'] as Map<String, dynamic>? ?? <String, dynamic>{};
+          final paydayPreview = data['payday_preview'] as Map<String, dynamic>? ?? <String, dynamic>{};
           final runningSalary = _currency(stats['current_payable'] ?? stats['running_salary']);
           final cards = <MapEntry<String, String>>[
             MapEntry('Allocated', '${stats['allocated'] ?? 0}'),
@@ -145,7 +146,9 @@ class _OverviewTabState extends State<_OverviewTab> {
                       ),
                       const SizedBox(height: 8),
                       Text(
-                        'Unpaid delivery earnings for this month. Paid salary stays in Payroll history.',
+                        'Coverage: ${paydayPreview['start_date'] ?? data['month'] ?? ''} to ${paydayPreview['effective_end_date'] ?? paydayPreview['end_date'] ?? ''}'
+                        '${(paydayPreview['payout_date'] ?? '').toString().isNotEmpty ? '\nExpected payout day: ${paydayPreview['payout_date']}' : ''}'
+                        '\nPaid salary stays in Payroll history.',
                         style: Theme.of(context).textTheme.bodyMedium?.copyWith(
                           color: Theme.of(context).colorScheme.onPrimaryContainer,
                         ),
@@ -522,4 +525,5 @@ String _currency(dynamic value) {
   final amount = double.tryParse(value.toString()) ?? 0;
   return 'PHP ${amount.toStringAsFixed(2)}';
 }
+
 

@@ -658,6 +658,8 @@ class AdminController extends BaseController
     public function shortages()
     {
         $shortages = $this->getShortageBalances();
+        $openShortages = array_values(array_filter($shortages, static fn (array $item): bool => ($item['shortage_status'] ?? '') === 'OPEN'));
+        $archivedShortages = array_values(array_filter($shortages, static fn (array $item): bool => ($item['shortage_status'] ?? '') === 'SETTLED'));
         $paymentHistory = (new ShortagePaymentModel())
             ->select('shortage_payments.*, riders.name, riders.rider_code')
             ->join('riders', 'riders.id = shortage_payments.rider_id')
@@ -670,6 +672,8 @@ class AdminController extends BaseController
             [
                 'today' => date('Y-m-d'),
                 'shortages' => $shortages,
+                'openShortages' => $openShortages,
+                'archivedShortages' => $archivedShortages,
                 'paymentHistory' => $paymentHistory,
             ]
         ));
@@ -1235,11 +1239,19 @@ class AdminController extends BaseController
 
                 return redirect()->back()->withInput()->with('error', 'This delivery day is already locked into payroll. Reopen the payroll batch before approving the rider submission.');
             }
+            $existingRemittance = (new RemittanceModel())->where('delivery_record_id', $deliveryId)->first();
+            if ($existingRemittance && ! in_array((string) ($existingRemittance['variance_type'] ?? 'PENDING'), ['PENDING'], true)) {
+                $db->transRollback();
+
+                return redirect()->back()->withInput()->with('error', 'This delivery day already has a finalized remittance record. Use the delivery correction workflow instead of approving over a collected day.');
+            }
             $payload['created_by_user_id'] = $existing['created_by_user_id'] ?? (int) session()->get('user_id');
             $deliveryModel->update($deliveryId, $payload);
         } else {
             $deliveryId = (int) $deliveryModel->insert($payload);
         }
+
+        $this->syncPendingRemittanceForDelivery($deliveryId, $payload);
 
         $submissionModel->update($submissionId, [
             'status' => 'APPROVED',
@@ -1496,16 +1508,22 @@ class AdminController extends BaseController
         }
 
         $totals = $this->calculateRemittanceTotals();
-        $actualInput = trim((string) $this->request->getPost('actual_remitted'));
+        $cashInput = trim((string) $this->request->getPost('cash_remitted'));
+        $gcashInput = trim((string) $this->request->getPost('gcash_remitted'));
+        $gcashReference = trim((string) $this->request->getPost('gcash_reference'));
         $supposedRemittance = isset($delivery['expected_remittance']) ? (float) $delivery['expected_remittance'] : null;
-        $actualRemitted = $actualInput === '' ? null : (float) $actualInput;
+        $cashRemitted = $cashInput === '' ? $totals['cash_total'] : (float) $cashInput;
+        $gcashRemitted = $gcashInput === '' ? 0.0 : (float) $gcashInput;
 
-        if (($supposedRemittance !== null && $supposedRemittance < 0) || ($actualRemitted !== null && $actualRemitted < 0)) {
+        if (($supposedRemittance !== null && $supposedRemittance < 0) || $cashRemitted < 0 || $gcashRemitted < 0) {
             return redirect()->back()->withInput()->with('error', 'Remittance amounts cannot be negative.');
         }
 
-        // When actual remitted is manually encoded, it becomes the accounting source.
-        $totalRemitted = $actualRemitted ?? $totals['total_remitted'];
+        if ($cashInput !== '' && abs($cashRemitted - $totals['cash_total']) > 0.005 && $totals['cash_total'] > 0) {
+            return redirect()->back()->withInput()->with('error', 'Cash remitted does not match the denomination total. Clear one of them or make them match.');
+        }
+
+        $totalRemitted = round($cashRemitted + $gcashRemitted, 2);
 
         $variance = 0.0;
         $type = 'PENDING';
@@ -1526,10 +1544,13 @@ class AdminController extends BaseController
             'delivery_record_id' => $deliveryRecordId,
             'delivery_date' => $delivery['delivery_date'],
             'remittance_account_id' => ! empty($delivery['remittance_account_id']) ? (int) $delivery['remittance_account_id'] : null,
+            'cash_remitted' => $cashRemitted,
+            'gcash_remitted' => $gcashRemitted,
+            'gcash_reference' => $gcashReference !== '' ? $gcashReference : null,
             'total_due' => (float) $delivery['total_due'],
             'total_remitted' => $totalRemitted,
             'supposed_remittance' => $supposedRemittance,
-            'actual_remitted' => $actualRemitted,
+            'actual_remitted' => $totalRemitted,
             'variance_amount' => abs($variance),
             'variance_type' => $type,
         ]);
@@ -2043,8 +2064,38 @@ class AdminController extends BaseController
 
         return [
             'denoms' => $denomCounts,
-            'total_remitted' => round($total, 2),
+            'cash_total' => round($total, 2),
         ];
+    }
+
+    private function syncPendingRemittanceForDelivery(int $deliveryId, array $deliveryPayload): void
+    {
+        $remittanceModel = new RemittanceModel();
+        $existing = $remittanceModel->where('delivery_record_id', $deliveryId)->first();
+
+        $pendingPayload = array_fill_keys(array_keys($this->denominations), 0);
+        $pendingPayload = array_merge($pendingPayload, [
+            'rider_id' => (int) ($deliveryPayload['rider_id'] ?? 0),
+            'delivery_record_id' => $deliveryId,
+            'delivery_date' => (string) ($deliveryPayload['delivery_date'] ?? date('Y-m-d')),
+            'remittance_account_id' => ! empty($deliveryPayload['remittance_account_id']) ? (int) $deliveryPayload['remittance_account_id'] : null,
+            'cash_remitted' => 0,
+            'gcash_remitted' => 0,
+            'gcash_reference' => null,
+            'total_due' => (float) ($deliveryPayload['total_due'] ?? 0),
+            'total_remitted' => 0,
+            'supposed_remittance' => isset($deliveryPayload['expected_remittance']) ? (float) $deliveryPayload['expected_remittance'] : null,
+            'actual_remitted' => null,
+            'variance_amount' => 0,
+            'variance_type' => 'PENDING',
+        ]);
+
+        if ($existing) {
+            $remittanceModel->update((int) $existing['id'], $pendingPayload);
+            return;
+        }
+
+        $remittanceModel->insert($pendingPayload);
     }
 
     private function formatRemittanceAccountLabel(array $row): string
@@ -2475,6 +2526,7 @@ class AdminController extends BaseController
             ->join('riders', 'riders.id = delivery_records.rider_id')
             ->join('remittance_accounts', 'remittance_accounts.id = delivery_records.remittance_account_id', 'left')
             ->join('remittances', 'remittances.delivery_record_id = delivery_records.id', 'left')
+            ->where('delivery_records.payroll_id', null)
             ->groupStart()
                 ->where('remittances.id', null)
             ->orWhere('remittances.variance_type', 'PENDING')

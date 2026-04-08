@@ -74,17 +74,15 @@ class RiderController extends BaseApiController
             ->where('delivery_date <=', $monthEnd)
             ->findAll();
 
-        $monthlyShortages = array_filter($remittances, static fn (array $remittance): bool => ($remittance['variance_type'] ?? '') === 'SHORT');
-        $monthlyShortageDeductions = round(array_sum(array_map(static fn (array $remittance): float => (float) ($remittance['variance_amount'] ?? 0), $monthlyShortages)), 2);
-        $monthlyRepayments = round((float) ((new ShortagePaymentModel())
-            ->selectSum('amount')
-            ->where('rider_id', $riderId)
-            ->where('payment_date >=', $monthStart)
-            ->where('payment_date <=', $monthEnd)
-            ->first()['amount'] ?? 0), 2);
+        $paydayPreview = $this->buildPaydayPreview($month);
+        $previewDeliveries = array_values(array_filter($deliveries, static function (array $delivery) use ($paydayPreview): bool {
+            $deliveryDate = (string) ($delivery['delivery_date'] ?? '');
 
+            return $deliveryDate >= $paydayPreview['start_date']
+                && $deliveryDate <= $paydayPreview['effective_end_date'];
+        }));
         $paidDeliveries = array_values(array_filter($deliveries, static fn (array $delivery): bool => ! empty($delivery['payroll_id'])));
-        $unpaidDeliveries = array_values(array_filter($deliveries, static fn (array $delivery): bool => empty($delivery['payroll_id'])));
+        $unpaidDeliveries = array_values(array_filter($previewDeliveries, static fn (array $delivery): bool => empty($delivery['payroll_id'])));
         $paidDeliveryIds = array_map(static fn (array $delivery): int => (int) $delivery['id'], $paidDeliveries);
         $unpaidDeliveryIds = array_map(static fn (array $delivery): int => (int) $delivery['id'], $unpaidDeliveries);
         $paidDeliveryIdLookup = array_flip($paidDeliveryIds);
@@ -118,8 +116,8 @@ class RiderController extends BaseApiController
         $currentRepayments = round((float) ((new ShortagePaymentModel())
             ->selectSum('amount')
             ->where('rider_id', $riderId)
-            ->where('payment_date >=', $monthStart)
-            ->where('payment_date <=', $monthEnd)
+            ->where('payment_date >=', $paydayPreview['start_date'])
+            ->where('payment_date <=', $paydayPreview['effective_end_date'])
             ->where('payroll_id', null)
             ->first()['amount'] ?? 0), 2);
         $monthEarnings = round(array_sum(array_column($deliveries, 'total_due')), 2);
@@ -132,6 +130,7 @@ class RiderController extends BaseApiController
                 'start' => $monthStart,
                 'end' => $monthEnd,
             ],
+            'payday_preview' => $paydayPreview,
             'stats' => [
                 'allocated' => array_sum(array_column($deliveries, 'allocated_parcels')),
                 'successful' => array_sum(array_column($deliveries, 'successful_deliveries')),
@@ -463,6 +462,47 @@ class RiderController extends BaseApiController
             'message' => 'Payroll receipt confirmed.',
             'payroll_id' => $payrollId,
         ]);
+    }
+
+    private function buildPaydayPreview(string $month): array
+    {
+        $today = date('Y-m-d');
+        $currentMonth = date('Y-m');
+        $monthStart = $month . '-01';
+        $monthEnd = date('Y-m-t', strtotime($monthStart));
+
+        if ($month !== $currentMonth) {
+            return [
+                'cutoff' => 'MONTH',
+                'label' => 'Selected month overview',
+                'start_date' => $monthStart,
+                'end_date' => $monthEnd,
+                'effective_end_date' => $monthEnd,
+                'payout_date' => null,
+            ];
+        }
+
+        if ((int) date('j') <= 20) {
+            $endDate = min($today, $month . '-15');
+
+            return [
+                'cutoff' => 'FIRST',
+                'label' => 'Cutoff 1 to 15',
+                'start_date' => $monthStart,
+                'end_date' => $month . '-15',
+                'effective_end_date' => $endDate,
+                'payout_date' => $month . '-20',
+            ];
+        }
+
+        return [
+            'cutoff' => 'SECOND',
+            'label' => 'Cutoff 16 to Month End',
+            'start_date' => $month . '-16',
+            'end_date' => $monthEnd,
+            'effective_end_date' => min($today, $monthEnd),
+            'payout_date' => date('Y-m-05', strtotime($monthStart . ' +1 month')),
+        ];
     }
 }
 

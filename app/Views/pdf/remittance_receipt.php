@@ -46,10 +46,13 @@
 
     <div class="summary">Expected Remittance: <strong>PHP <?= number_format((float) ($record['supposed_remittance'] ?? 0), 2) ?></strong></div>
     <div class="summary">Salary Earning Snapshot: <strong>PHP <?= number_format((float) $record['total_due'], 2) ?></strong></div>
-    <div class="summary">Total Remitted: <strong>PHP <?= number_format((float) $record['total_remitted'], 2) ?></strong></div>
-    <?php if (! empty($record['actual_remitted'])): ?>
-        <div class="summary">Actual Remitted (Manual): <strong>PHP <?= number_format((float) $record['actual_remitted'], 2) ?></strong></div>
+    <div class="summary">Cash Remitted: <strong>PHP <?= number_format((float) ($record['cash_remitted'] ?? 0), 2) ?></strong></div>
+    <div class="summary">GCash Remitted: <strong>PHP <?= number_format((float) ($record['gcash_remitted'] ?? 0), 2) ?></strong></div>
+    <?php if (! empty($record['gcash_reference'])): ?>
+        <div class="summary">GCash Reference: <strong><?= esc($record['gcash_reference']) ?></strong></div>
     <?php endif; ?>
+    <div class="summary">Total Remitted: <strong>PHP <?= number_format((float) $record['total_remitted'], 2) ?></strong></div>
+
     <div class="summary">
         Status:
         <span class="badge <?= strtolower($record['variance_type']) ?>">
@@ -58,4 +61,6 @@
     </div>
 </body>
 </html>
+
+
 

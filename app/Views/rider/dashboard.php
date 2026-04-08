@@ -73,9 +73,15 @@ $formatAccountLabel = static function (array $row): string {
     <div class="tab-pane fade show active" id="overview-pane" role="tabpanel" aria-labelledby="overview-tab" tabindex="0">
         <div class="card salary-focus-card mb-3">
             <div class="card-body">
-                <div class="stat-label">Current Payable For <?= esc(date('F Y', strtotime($month . '-01'))) ?></div>
+                <div class="stat-label">Current Payable For <?= esc($paydayPreview['label'] ?? date('F Y', strtotime($month . '-01'))) ?></div>
                 <div class="salary-focus-value">PHP <?= number_format((float) $stats['current_payable'], 2) ?></div>
-                <div class="text-muted">This is the unpaid delivery earnings for the month. Paid or released salary stays in Payroll History.</div>
+                <div class="text-muted">
+                    Coverage: <?= esc($paydayPreview['start_date'] ?? $month . '-01') ?> to <?= esc($paydayPreview['effective_end_date'] ?? $month . '-01') ?>.
+                    <?php if (! empty($paydayPreview['payout_date'])): ?>
+                        Expected payout day: <?= esc($paydayPreview['payout_date']) ?>.
+                    <?php endif; ?>
+                    Paid or released salary stays in Payroll History.
+                </div>
             </div>
         </div>
 
@@ -319,5 +325,6 @@ document.addEventListener('DOMContentLoaded', () => {
 </script>
 <?php endif; ?>
 <?= $this->endSection() ?>
+
 
 

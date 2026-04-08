@@ -198,8 +198,9 @@ final class WorkflowSmokeTest extends CIUnitTestCase
         ])->post('/admin/remittance/1', [
             $tokenName => $tokenHash,
             'denom_1000' => '2',
-            'denom_500' => '1',
-            'actual_remitted' => '2450.00',
+            'denom_100' => '4',
+            'denom_50' => '1',
+            'cash_remitted' => '2450.00',
         ]);
 
         $result->assertRedirect();
@@ -478,6 +479,9 @@ final class WorkflowSmokeTest extends CIUnitTestCase
             total_due REAL NOT NULL DEFAULT 0,
             expected_remittance REAL NOT NULL DEFAULT 0,
             remittance_account_id INTEGER NULL,
+            cash_remitted REAL NULL,
+            gcash_remitted REAL NULL,
+            gcash_reference VARCHAR(100) NULL,
             commission_rate REAL NOT NULL DEFAULT 13.00,
             notes TEXT NULL,
             entry_source VARCHAR(30) NOT NULL DEFAULT "ADMIN_MANUAL",
@@ -495,6 +499,9 @@ final class WorkflowSmokeTest extends CIUnitTestCase
             delivery_record_id INTEGER NOT NULL,
             delivery_date DATE NOT NULL,
             remittance_account_id INTEGER NULL,
+            cash_remitted REAL NULL,
+            gcash_remitted REAL NULL,
+            gcash_reference VARCHAR(100) NULL,
             denom_025 INTEGER NOT NULL DEFAULT 0,
             denom_1 INTEGER NOT NULL DEFAULT 0,
             denom_5 INTEGER NOT NULL DEFAULT 0,
@@ -587,6 +594,9 @@ final class WorkflowSmokeTest extends CIUnitTestCase
             failed_deliveries INTEGER NOT NULL DEFAULT 0,
             expected_remittance REAL NOT NULL DEFAULT 0,
             remittance_account_id INTEGER NULL,
+            cash_remitted REAL NULL,
+            gcash_remitted REAL NULL,
+            gcash_reference VARCHAR(100) NULL,
             notes TEXT NULL,
             status VARCHAR(20) NOT NULL DEFAULT "PENDING",
             processed_delivery_record_id INTEGER NULL,
@@ -672,6 +682,11 @@ final class WorkflowSmokeTest extends CIUnitTestCase
         ]);
     }
 }
+
+
+
+
+
 
 
 

@@ -109,24 +109,66 @@ class AdminController extends BaseApiController
             'last_admin_reason' => 'Approved rider submission via API.',
         ];
 
-        if ($existing) {
-            if (! empty($existing['payroll_id'])) {
-                $db->transRollback();
+          if ($existing) {
+              if (! empty($existing['payroll_id'])) {
+                  $db->transRollback();
 
-                return $this->response->setStatusCode(409)->setJSON([
-                    'status' => 'error',
-                    'message' => 'This delivery day is already locked into payroll.',
-                ]);
-            }
+                  return $this->response->setStatusCode(409)->setJSON([
+                      'status' => 'error',
+                      'message' => 'This delivery day is already locked into payroll.',
+                  ]);
+              }
 
-            $deliveryId = (int) $existing['id'];
-            $deliveryModel->update($deliveryId, $deliveryPayload);
-        } else {
-            $deliveryId = (int) $deliveryModel->insert($deliveryPayload);
-        }
+              $existingRemittance = (new RemittanceModel())->where('delivery_record_id', (int) $existing['id'])->first();
+              if ($existingRemittance && ! in_array((string) ($existingRemittance['variance_type'] ?? 'PENDING'), ['PENDING'], true)) {
+                  $db->transRollback();
 
-        $submissionModel->update($submissionId, [
-            'status' => 'APPROVED',
+                  return $this->response->setStatusCode(409)->setJSON([
+                      'status' => 'error',
+                      'message' => 'This delivery day already has a finalized remittance record. Use the correction workflow instead.',
+                  ]);
+              }
+
+              $deliveryId = (int) $existing['id'];
+              $deliveryModel->update($deliveryId, $deliveryPayload);
+          } else {
+              $deliveryId = (int) $deliveryModel->insert($deliveryPayload);
+          }
+
+          $remittanceModel = new RemittanceModel();
+          $pendingPayload = [
+              'rider_id' => (int) ($deliveryPayload['rider_id'] ?? 0),
+              'delivery_record_id' => $deliveryId,
+              'delivery_date' => (string) ($deliveryPayload['delivery_date'] ?? date('Y-m-d')),
+              'remittance_account_id' => ! empty($deliveryPayload['remittance_account_id']) ? (int) $deliveryPayload['remittance_account_id'] : null,
+              'cash_remitted' => 0,
+              'gcash_remitted' => 0,
+              'gcash_reference' => null,
+              'denom_025' => 0,
+              'denom_1' => 0,
+              'denom_5' => 0,
+              'denom_10' => 0,
+              'denom_20' => 0,
+              'denom_50' => 0,
+              'denom_100' => 0,
+              'denom_500' => 0,
+              'denom_1000' => 0,
+              'total_due' => (float) ($deliveryPayload['total_due'] ?? 0),
+              'total_remitted' => 0,
+              'supposed_remittance' => isset($deliveryPayload['expected_remittance']) ? (float) $deliveryPayload['expected_remittance'] : null,
+              'actual_remitted' => null,
+              'variance_amount' => 0,
+              'variance_type' => 'PENDING',
+          ];
+          $existingPendingRemittance = $remittanceModel->where('delivery_record_id', $deliveryId)->first();
+          if ($existingPendingRemittance) {
+              $remittanceModel->update((int) $existingPendingRemittance['id'], $pendingPayload);
+          } else {
+              $remittanceModel->insert($pendingPayload);
+          }
+
+          $submissionModel->update($submissionId, [
+              'status' => 'APPROVED',
             'processed_delivery_record_id' => $deliveryId,
         ]);
 
@@ -216,6 +258,7 @@ class AdminController extends BaseApiController
             ->join('riders', 'riders.id = delivery_records.rider_id')
             ->join('remittance_accounts', 'remittance_accounts.id = delivery_records.remittance_account_id', 'left')
             ->join('remittances', 'remittances.delivery_record_id = delivery_records.id', 'left')
+            ->where('delivery_records.payroll_id', null)
             ->groupStart()
                 ->where('remittances.id', null)
                 ->orWhere('remittances.variance_type', 'PENDING')

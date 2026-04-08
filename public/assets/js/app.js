@@ -2,10 +2,11 @@
     const remittanceForm = document.querySelector('[data-remittance-form]');
     if (remittanceForm) {
         const totalField = remittanceForm.querySelector('[data-total-remitted]');
+        const cashTotalField = remittanceForm.querySelector('[data-cash-total]');
         const statusField = remittanceForm.querySelector('[data-variance-status]');
         const supposedField = remittanceForm.querySelector('[data-supposed-remittance]');
-        const actualField = remittanceForm.querySelector('[data-actual-remitted]');
-        let actualTouched = false;
+        const cashField = remittanceForm.querySelector('[data-cash-remitted]');
+        const gcashField = remittanceForm.querySelector('[data-gcash-remitted]');
 
         const recalculate = () => {
             let denomTotal = 0;
@@ -15,16 +16,17 @@
                 denomTotal += count * value;
             });
 
-            if (actualField && !actualTouched) {
-                actualField.value = denomTotal.toFixed(2);
+            const supposedRaw = supposedField?.value ?? '';
+            const cash = cashField && cashField.value !== '' ? Number(cashField.value || 0) : denomTotal;
+            const gcash = Number(gcashField?.value || 0);
+            const remitted = cash + gcash;
+
+            if (cashTotalField) {
+                cashTotalField.textContent = `PHP ${denomTotal.toFixed(2)}`;
             }
 
-            const supposedRaw = supposedField?.value ?? '';
-            const actual = Number(actualField?.value || 0);
-            const remitted = actualField && actualField.value !== '' ? actual : denomTotal;
-
             if (totalField) {
-                totalField.textContent = `PHP ${denomTotal.toFixed(2)}`;
+                totalField.textContent = `PHP ${remitted.toFixed(2)}`;
             }
 
             if (!statusField) {
@@ -51,11 +53,6 @@
                 statusField.className = 'badge badge-over';
             }
         };
-
-        actualField?.addEventListener('input', () => {
-            actualTouched = true;
-            recalculate();
-        });
 
         remittanceForm.addEventListener('input', recalculate);
         recalculate();
@@ -353,6 +350,7 @@
         window.location.reload();
     });
 })();
+
 
 
 

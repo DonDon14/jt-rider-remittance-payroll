@@ -142,7 +142,10 @@ unset($pendingQuery[$pendingPageName]);
                                 <td><?= esc($item['rider_code']) ?> - <?= esc($item['name']) ?></td>
                                 <td><?= esc(trim((string) ($item['remittance_account_name'] ?? '')) !== '' ? (($item['remittance_account_name'] ?? '') . (! empty($item['remittance_account_number']) ? ' (' . $item['remittance_account_number'] . ')' : '')) : '-') ?></td>
                                 <td>PHP <?= number_format((float) ($item['supposed_remittance'] ?? 0), 2) ?></td>
-                                <td>PHP <?= number_format((float) $item['total_remitted'], 2) ?></td>
+                                                                <td>
+                                    <div>PHP <?= number_format((float) $item['total_remitted'], 2) ?></div>
+                                    <div class="small text-muted">Cash <?= number_format((float) ($item['cash_remitted'] ?? 0), 2) ?> | GCash <?= number_format((float) ($item['gcash_remitted'] ?? 0), 2) ?></div>
+                                </td>
                                 <td><span class="badge <?= 'badge-' . strtolower($item['variance_type']) ?>"><?= esc($item['settlement_status']) ?></span></td>
                                 <td><a href="<?= site_url('/admin/remittance/pdf/' . (int) $item['id']) ?>" target="_blank" class="btn btn-sm btn-warning">Receipt</a></td>
                             </tr>
@@ -177,4 +180,5 @@ unset($pendingQuery[$pendingPageName]);
 </div>
 
 <?= $this->endSection() ?>
+
 

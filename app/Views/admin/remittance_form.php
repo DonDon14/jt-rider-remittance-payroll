@@ -33,19 +33,31 @@
         <form method="post" action="<?= site_url('/admin/remittance/' . (int) $delivery['id']) ?><?= ! empty($isModal) ? '?modal=1' : '' ?>" data-remittance-form>
             <?= csrf_field() ?>
             <div class="row g-3 mb-4">
-                <div class="col-md-6">
+                <div class="col-md-4">
                     <label class="form-label"><strong>Expected Remittance</strong></label>
                     <input type="number" step="0.01" value="<?= esc(number_format((float) ($delivery['expected_remittance'] ?? 0), 2, '.', '')) ?>" class="form-control" readonly data-supposed-remittance>
                     <div class="form-text">This comes from the rider-day record and is the amount the rider should remit.</div>
                 </div>
+                <div class="col-md-4">
+                    <label class="form-label"><strong>GCash Remitted</strong></label>
+                    <input type="number" step="0.01" min="0" name="gcash_remitted" placeholder="0.00" value="<?= isset($remittance['gcash_remitted']) && $remittance['gcash_remitted'] !== null ? esc($remittance['gcash_remitted']) : '' ?>" class="form-control" data-gcash-remitted>
+                </div>
+                <div class="col-md-4">
+                    <label class="form-label"><strong>Cash Remitted</strong></label>
+                    <input type="number" step="0.01" min="0" name="cash_remitted" placeholder="Leave blank to use denomination total" value="<?= isset($remittance['cash_remitted']) && $remittance['cash_remitted'] !== null ? esc($remittance['cash_remitted']) : '' ?>" class="form-control" data-cash-remitted>
+                    <div class="form-text">If blank, the system uses the denomination total below.</div>
+                </div>
+            </div>
+
+            <div class="row g-3 mb-4">
                 <div class="col-md-6">
-                    <label class="form-label"><strong>Actual Remitted</strong></label>
-                    <input type="number" step="0.01" name="actual_remitted" placeholder="0.00" value="<?= isset($remittance['actual_remitted']) && $remittance['actual_remitted'] !== null ? esc($remittance['actual_remitted']) : '' ?>" class="form-control" data-actual-remitted>
+                    <label class="form-label"><strong>GCash Reference</strong></label>
+                    <input type="text" name="gcash_reference" maxlength="100" placeholder="Reference number, sender, or note" value="<?= ! empty($remittance['gcash_reference']) ? esc($remittance['gcash_reference']) : '' ?>" class="form-control">
                 </div>
             </div>
 
             <hr>
-            <h5 class="mb-3">Denomination Count (Optional)</h5>
+            <h5 class="mb-3">Cash Denomination Count (Optional)</h5>
 
             <div class="row g-2">
                 <?php foreach ($denominations as $field => $value): ?>
@@ -57,7 +69,8 @@
             </div>
 
             <div class="mt-4 d-flex flex-wrap gap-2 align-items-center">
-                <div class="alert alert-light border mb-0">Total from Denominations: <strong data-total-remitted>PHP 0.00</strong></div>
+                <div class="alert alert-light border mb-0">Cash from Denominations: <strong data-cash-total>PHP 0.00</strong></div>
+                <div class="alert alert-light border mb-0">Grand Total: <strong data-total-remitted>PHP 0.00</strong></div>
                 <div class="alert alert-light border mb-0">Status: <span data-variance-status class="badge text-bg-secondary">PENDING</span></div>
                 <button class="btn btn-primary">Save Remittance</button>
                 <?php if (! empty($remittance['id'])): ?>
@@ -69,4 +82,3 @@
 </div>
 
 <?= $this->endSection() ?>
-
