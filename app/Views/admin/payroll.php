@@ -122,15 +122,20 @@
                             <option value="FIRST" <?= $selectedUnpaidCutoff === 'FIRST' ? 'selected' : '' ?>>1 to 15</option>
                             <option value="SECOND" <?= $selectedUnpaidCutoff === 'SECOND' ? 'selected' : '' ?>>16 to Month-End</option>
                         </select>
-                    </div>
-                    <div class="col-md-2 d-grid">
+                    </div>                    <div class="col-md-2 d-grid">
                         <button class="btn btn-dark">Preview</button>
                     </div>
-                    <div class="col-md-4 d-grid">
+                    <div class="col-md-3 d-grid">
+                        <a href="<?= site_url('/admin/payroll/unpaid-export/pdf?' . http_build_query([
+                            'unpaid_month' => $selectedUnpaidMonth,
+                            'unpaid_cutoff' => $selectedUnpaidCutoff,
+                        ])) ?>" class="btn btn-outline-dark" target="_blank">Download PDF</a>
+                    </div>
+                    <div class="col-md-3 d-grid">
                         <a href="<?= site_url('/admin/payroll/unpaid-export/csv?' . http_build_query([
                             'unpaid_month' => $selectedUnpaidMonth,
                             'unpaid_cutoff' => $selectedUnpaidCutoff,
-                        ])) ?>" class="btn btn-outline-dark">Download Unpaid Salary CSV</a>
+                        ])) ?>" class="btn btn-outline-secondary">Download CSV</a>
                     </div>
                 </form>
             </div>
@@ -424,6 +429,10 @@ document.addEventListener('DOMContentLoaded', () => {
 });
 </script>
 <?= $this->endSection() ?>
+
+
+
+
 
 
 

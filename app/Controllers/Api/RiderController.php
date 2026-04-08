@@ -36,6 +36,15 @@ class RiderController extends BaseApiController
                 'rider_code' => (string) $rider['rider_code'],
                 'name' => (string) $rider['name'],
                 'contact_number' => (string) ($rider['contact_number'] ?? ''),
+                'profile_photo_url' => ! empty($rider['profile_photo_path']) ? site_url((string) $rider['profile_photo_path']) : null,
+                'address' => (string) ($rider['address'] ?? ''),
+                'birth_date' => (string) ($rider['birth_date'] ?? ''),
+                'emergency_contact_name' => (string) ($rider['emergency_contact_name'] ?? ''),
+                'emergency_contact_number' => (string) ($rider['emergency_contact_number'] ?? ''),
+                'government_id_number' => (string) ($rider['government_id_number'] ?? ''),
+                'hire_date' => (string) ($rider['hire_date'] ?? ''),
+                'branch_name' => (string) ($rider['branch_name'] ?? ''),
+                'notes' => (string) ($rider['notes'] ?? ''),
                 'commission_rate' => round((float) ($rider['commission_rate'] ?? 0), 2),
             ],
         ]);
@@ -505,4 +514,6 @@ class RiderController extends BaseApiController
         ];
     }
 }
+
+
 

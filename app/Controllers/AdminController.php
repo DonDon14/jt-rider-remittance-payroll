@@ -515,6 +515,24 @@ class AdminController extends BaseController
             ->setBody($csv);
     }
 
+
+    public function unpaidPayrollPdf()
+    {
+        $payrollMonth = trim((string) $this->request->getGet('unpaid_month'));
+        $cutoffPeriod = trim((string) $this->request->getGet('unpaid_cutoff'));
+
+        if ($payrollMonth === '' || ! preg_match('/^\d{4}\-\d{2}$/', $payrollMonth) || ! in_array($cutoffPeriod, ['FIRST', 'SECOND'], true)) {
+            return redirect()->to('/admin/payroll')->with('error', 'A valid unpaid cutoff range is required.');
+        }
+
+        $summary = $this->buildUnpaidPayrollPreview($payrollMonth, $cutoffPeriod);
+        $html = view('pdf/unpaid_payroll_summary', [
+            'summary' => $summary,
+            'cutoffLabel' => $cutoffPeriod === 'FIRST' ? '1 to 15' : '16 to Month-End',
+        ]);
+
+        return $this->renderPdf($html, 'unpaid-payroll-' . $summary['start_date'] . '-to-' . $summary['end_date'] . '.pdf');
+    }
     public function unpaidPayrollCsv()
     {
         $payrollMonth = trim((string) $this->request->getGet('unpaid_month'));
@@ -750,6 +768,14 @@ class AdminController extends BaseController
             'rider_code' => 'required|min_length[3]|max_length[40]|is_unique[riders.rider_code]',
             'name' => 'required|min_length[3]|max_length[120]',
             'contact_number' => 'permit_empty|max_length[30]',
+            'address' => 'permit_empty|max_length[1000]',
+            'birth_date' => 'permit_empty|valid_date[Y-m-d]',
+            'emergency_contact_name' => 'permit_empty|max_length[120]',
+            'emergency_contact_number' => 'permit_empty|max_length[30]',
+            'government_id_number' => 'permit_empty|max_length[80]',
+            'hire_date' => 'permit_empty|valid_date[Y-m-d]',
+            'branch_name' => 'permit_empty|max_length[120]',
+            'notes' => 'permit_empty|max_length[2000]',
             'commission_rate' => 'required|decimal',
         ];
 
@@ -769,14 +795,27 @@ class AdminController extends BaseController
             return redirect()->back()->withInput()->with('error', 'The rider code would create a username that already exists.');
         }
 
+        $photoPath = $this->storeRiderProfilePhoto('profile_photo');
+        if ($photoPath === false) {
+            return redirect()->back()->withInput()->with('error', 'Upload a valid rider profile photo image.');
+        }
+
         $db = db_connect();
         $db->transStart();
-        $successMessage = 'Rider details updated.';
 
         $riderId = (new RiderModel())->insert([
             'rider_code' => $riderCode,
             'name' => $riderName,
             'contact_number' => $contactNumber,
+            'profile_photo_path' => $photoPath,
+            'address' => $this->nullableText('address'),
+            'birth_date' => $this->nullableDate('birth_date'),
+            'emergency_contact_name' => $this->nullableText('emergency_contact_name'),
+            'emergency_contact_number' => $this->nullableText('emergency_contact_number'),
+            'government_id_number' => $this->nullableText('government_id_number'),
+            'hire_date' => $this->nullableDate('hire_date'),
+            'branch_name' => $this->nullableText('branch_name'),
+            'notes' => $this->nullableText('notes'),
             'commission_rate' => $commissionRate,
             'is_active' => 1,
         ]);
@@ -806,7 +845,6 @@ class AdminController extends BaseController
 
         return redirect()->to('/admin/riders')->with('success', 'Rider profile created. Temporary login: ' . $defaultUsername . ' / ' . $temporaryPassword . '. The rider must change it after login.');
     }
-
     public function updateRider(int $id)
     {
         helper('credentials');
@@ -822,6 +860,14 @@ class AdminController extends BaseController
             'rider_code' => 'required|min_length[3]|max_length[40]|is_unique[riders.rider_code,id,' . $id . ']',
             'name' => 'required|min_length[3]|max_length[120]',
             'contact_number' => 'permit_empty|max_length[30]',
+            'address' => 'permit_empty|max_length[1000]',
+            'birth_date' => 'permit_empty|valid_date[Y-m-d]',
+            'emergency_contact_name' => 'permit_empty|max_length[120]',
+            'emergency_contact_number' => 'permit_empty|max_length[30]',
+            'government_id_number' => 'permit_empty|max_length[80]',
+            'hire_date' => 'permit_empty|valid_date[Y-m-d]',
+            'branch_name' => 'permit_empty|max_length[120]',
+            'notes' => 'permit_empty|max_length[2000]',
             'is_active' => 'required|in_list[0,1]',
         ];
 
@@ -834,13 +880,28 @@ class AdminController extends BaseController
         $contactNumber = trim((string) $this->request->getPost('contact_number'));
         $isActive = (int) $this->request->getPost('is_active') === 1 ? 1 : 0;
 
+        $photoPath = $this->storeRiderProfilePhoto('profile_photo', (string) ($rider['profile_photo_path'] ?? ''));
+        if ($photoPath === false) {
+            return redirect()->back()->withInput()->with('error', 'Upload a valid rider profile photo image.');
+        }
+
         $db = db_connect();
         $db->transStart();
+        $successMessage = 'Rider details updated.';
 
         $riderModel->update($id, [
             'rider_code' => $riderCode,
             'name' => $name,
             'contact_number' => $contactNumber,
+            'profile_photo_path' => $photoPath,
+            'address' => $this->nullableText('address'),
+            'birth_date' => $this->nullableDate('birth_date'),
+            'emergency_contact_name' => $this->nullableText('emergency_contact_name'),
+            'emergency_contact_number' => $this->nullableText('emergency_contact_number'),
+            'government_id_number' => $this->nullableText('government_id_number'),
+            'hire_date' => $this->nullableDate('hire_date'),
+            'branch_name' => $this->nullableText('branch_name'),
+            'notes' => $this->nullableText('notes'),
             'is_active' => $isActive,
         ]);
 
@@ -883,7 +944,6 @@ class AdminController extends BaseController
 
         return redirect()->to('/admin/riders')->with('success', $successMessage);
     }
-
     public function resetRiderPassword(int $id)
     {
         helper('credentials');
@@ -2785,6 +2845,45 @@ class AdminController extends BaseController
         return $rows;
     }
 
+    private function nullableText(string $field): ?string
+    {
+        $value = trim((string) $this->request->getPost($field));
+
+        return $value !== '' ? $value : null;
+    }
+
+    private function nullableDate(string $field): ?string
+    {
+        $value = trim((string) $this->request->getPost($field));
+
+        return $value !== '' ? $value : null;
+    }
+
+    private function storeRiderProfilePhoto(string $field, ?string $existingPath = null)
+    {
+        $file = $this->request->getFile($field);
+        if (! $file || $file->getError() === UPLOAD_ERR_NO_FILE) {
+            return $existingPath;
+        }
+
+        if (! $file->isValid()) {
+            return false;
+        }
+
+        if (! in_array((string) $file->getMimeType(), ['image/jpeg', 'image/png', 'image/webp'], true)) {
+            return false;
+        }
+
+        $directory = FCPATH . 'uploads/riders';
+        if (! is_dir($directory)) {
+            mkdir($directory, 0775, true);
+        }
+
+        $newName = $file->getRandomName();
+        $file->move($directory, $newName, true);
+
+        return 'uploads/riders/' . $newName;
+    }
     private function getActiveAnnouncements(): array
     {
         $today = date('Y-m-d H:i:s');
@@ -2810,6 +2909,11 @@ class AdminController extends BaseController
         }));
     }
 }
+
+
+
+
+
 
 
 

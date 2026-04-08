@@ -34,6 +34,7 @@ $routes->group('admin', ['filter' => 'admin'], static function ($routes) {
     $routes->get('payroll/(:num)/pdf', 'AdminController::payrollPdf/$1');
     $routes->get('payroll/summary/pdf', 'AdminController::payrollSummaryPdf');
     $routes->get('payroll/export/csv', 'AdminController::payrollCsv');
+    $routes->get('payroll/unpaid-export/pdf', 'AdminController::unpaidPayrollPdf');
     $routes->get('payroll/unpaid-export/csv', 'AdminController::unpaidPayrollCsv');
     $routes->get('history/export/csv', 'AdminController::deliveryHistoryCsv');
     $routes->get('corrections/export/csv', 'AdminController::correctionsCsv');
@@ -88,5 +89,6 @@ $routes->group('api', static function ($routes) {
     $routes->post('rider/delivery-submissions', 'Api\RiderController::storeSubmission');
     $routes->post('rider/payroll/(:num)/confirm', 'Api\RiderController::confirmPayrollReceipt/$1');
 });
+
 
 

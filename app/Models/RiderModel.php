@@ -16,6 +16,15 @@ class RiderModel extends Model
         'rider_code',
         'name',
         'contact_number',
+        'profile_photo_path',
+        'address',
+        'birth_date',
+        'emergency_contact_name',
+        'emergency_contact_number',
+        'government_id_number',
+        'hire_date',
+        'branch_name',
+        'notes',
         'commission_rate',
         'is_active',
     ];
@@ -33,3 +42,4 @@ class RiderModel extends Model
     protected $createdField = 'created_at';
     protected $updatedField = 'updated_at';
 }
+

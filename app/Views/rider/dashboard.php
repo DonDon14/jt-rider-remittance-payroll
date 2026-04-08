@@ -71,6 +71,29 @@ $formatAccountLabel = static function (array $row): string {
 
 <div class="tab-content" id="riderPortalTabsContent">
     <div class="tab-pane fade show active" id="overview-pane" role="tabpanel" aria-labelledby="overview-tab" tabindex="0">
+        <div class="card mb-3">
+            <div class="card-body">
+                <div class="row g-3 align-items-center">
+                    <div class="col-md-2 text-center">
+                        <?php if (! empty($rider['profile_photo_path'])): ?>
+                            <img src="<?= esc(site_url((string) $rider['profile_photo_path'])) ?>" alt="<?= esc($rider['name']) ?>" style="width:96px;height:96px;border-radius:50%;object-fit:cover;">
+                        <?php else: ?>
+                            <div class="rounded-circle bg-light d-inline-flex align-items-center justify-content-center" style="width:96px;height:96px;font-size:36px;"><?= esc(strtoupper(substr((string) $rider['name'], 0, 1))) ?></div>
+                        <?php endif; ?>
+                    </div>
+                    <div class="col-md-10">
+                        <div class="row g-3">
+                            <div class="col-md-4"><div class="small text-muted">Branch</div><div class="fw-semibold"><?= esc($rider['branch_name'] ?? '-') ?></div></div>
+                            <div class="col-md-4"><div class="small text-muted">Address</div><div class="fw-semibold"><?= esc($rider['address'] ?? '-') ?></div></div>
+                            <div class="col-md-4"><div class="small text-muted">Contact</div><div class="fw-semibold"><?= esc($rider['contact_number'] ?? '-') ?></div></div>
+                            <div class="col-md-4"><div class="small text-muted">Emergency Contact</div><div class="fw-semibold"><?= esc(($rider['emergency_contact_name'] ?? '') !== '' ? (($rider['emergency_contact_name'] ?? '') . ' - ' . ($rider['emergency_contact_number'] ?? '-')) : '-') ?></div></div>
+                            <div class="col-md-4"><div class="small text-muted">Government ID</div><div class="fw-semibold"><?= esc($rider['government_id_number'] ?? '-') ?></div></div>
+                            <div class="col-md-4"><div class="small text-muted">Hire Date</div><div class="fw-semibold"><?= esc($rider['hire_date'] ?? '-') ?></div></div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
         <div class="card salary-focus-card mb-3">
             <div class="card-body">
                 <div class="stat-label">Current Payable For <?= esc($paydayPreview['label'] ?? date('F Y', strtotime($month . '-01'))) ?></div>
@@ -433,4 +456,6 @@ document.addEventListener('DOMContentLoaded', () => {
 </script>
 <?php endif; ?>
 <?= $this->endSection() ?>
+
+
 

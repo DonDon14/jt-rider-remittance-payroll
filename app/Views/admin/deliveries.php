@@ -73,7 +73,7 @@
                         <td><?= esc($record['updated_at'] ?: $record['created_at'] ?: '-') ?></td>
                         <td class="d-flex gap-2">
                             <a href="<?= site_url('/admin/deliveries/' . (int) $record['id']) ?>" class="btn btn-sm btn-outline-dark">Details</a>
-                            <a href="<?= site_url('/admin/remittance/' . (int) $record['id']) ?>" class="btn btn-sm btn-outline-primary">Collect</a>
+                            <a href="<?= site_url('/admin/remittances') ?>" class="btn btn-sm btn-outline-primary">Open Remittances</a>
                         </td>
                     </tr>
                 <?php endforeach; ?>
@@ -159,3 +159,4 @@
 </div>
 
 <?= $this->endSection() ?>
+
