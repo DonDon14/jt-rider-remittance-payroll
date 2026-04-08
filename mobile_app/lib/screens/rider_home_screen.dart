@@ -101,11 +101,11 @@ class _OverviewTabState extends State<_OverviewTab> {
 
           final data = snapshot.data!['data'] as Map<String, dynamic>;
           final stats = data['stats'] as Map<String, dynamic>? ?? <String, dynamic>{};
+          final runningSalary = _currency(stats['running_salary']);
           final cards = <MapEntry<String, String>>[
             MapEntry('Allocated', '${stats['allocated'] ?? 0}'),
             MapEntry('Successful', '${stats['successful'] ?? 0}'),
             MapEntry('Failed', '${stats['failed'] ?? 0}'),
-            MapEntry('Running Salary', _currency(stats['running_salary'])),
             MapEntry('Expected Remittance', _currency(stats['expected_remittance'])),
             MapEntry('Total Remitted', _currency(stats['total_remitted'])),
             MapEntry('Shortage Deductions', _currency(stats['shortage_deductions'])),
@@ -118,6 +118,41 @@ class _OverviewTabState extends State<_OverviewTab> {
             children: [
               Text('Month: ${data['month'] ?? ''}', style: Theme.of(context).textTheme.titleMedium),
               const SizedBox(height: 12),
+              Card(
+                color: Theme.of(context).colorScheme.primaryContainer,
+                child: Padding(
+                  padding: const EdgeInsets.all(20),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'Running Salary',
+                        style: Theme.of(context).textTheme.labelLarge?.copyWith(
+                          color: Theme.of(context).colorScheme.onPrimaryContainer,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      Text(
+                        runningSalary,
+                        style: Theme.of(context).textTheme.headlineMedium?.copyWith(
+                          color: Theme.of(context).colorScheme.onPrimaryContainer,
+                          fontWeight: FontWeight.w800,
+                          fontSize: 34,
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      Text(
+                        'Current salary total from successful deliveries before deductions.',
+                        style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                          color: Theme.of(context).colorScheme.onPrimaryContainer,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+              const SizedBox(height: 8),
               ...cards.map(
                 (card) => Card(
                   child: ListTile(title: Text(card.key), trailing: Text(card.value)),
