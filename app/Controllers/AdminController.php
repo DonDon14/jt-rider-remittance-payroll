@@ -1512,15 +1512,13 @@ class AdminController extends BaseController
         $gcashInput = trim((string) $this->request->getPost('gcash_remitted'));
         $gcashReference = trim((string) $this->request->getPost('gcash_reference'));
         $supposedRemittance = isset($delivery['expected_remittance']) ? (float) $delivery['expected_remittance'] : null;
-        $cashRemitted = $cashInput === '' ? $totals['cash_total'] : (float) $cashInput;
+        $cashRemitted = $totals['cash_total'] > 0
+            ? $totals['cash_total']
+            : ($cashInput === '' ? 0.0 : (float) $cashInput);
         $gcashRemitted = $gcashInput === '' ? 0.0 : (float) $gcashInput;
 
         if (($supposedRemittance !== null && $supposedRemittance < 0) || $cashRemitted < 0 || $gcashRemitted < 0) {
             return redirect()->back()->withInput()->with('error', 'Remittance amounts cannot be negative.');
-        }
-
-        if ($cashInput !== '' && abs($cashRemitted - $totals['cash_total']) > 0.005 && $totals['cash_total'] > 0) {
-            return redirect()->back()->withInput()->with('error', 'Cash remitted does not match the denomination total. Clear one of them or make them match.');
         }
 
         $totalRemitted = round($cashRemitted + $gcashRemitted, 2);
@@ -1952,7 +1950,7 @@ class AdminController extends BaseController
         $records = $this->buildHistoryQuery($search, $startDate, $endDate, $riderId, $remittanceStatus)->findAll();
 
         $lines = [
-            ['Date', 'Rider Code', 'Rider Name', 'Source', 'Allocated', 'Successful', 'Failed', 'Salary Earning', 'Expected Remittance', 'Remittance Status'],
+            ['Date', 'Rider Code', 'Rider Name', 'Source', 'Allocated', 'Successful', 'Failed', 'Salary Earning', 'Expected Remittance', 'Cash Remitted', 'GCash Remitted', 'Total Remitted', 'Remittance Status'],
         ];
 
         foreach ($records as $record) {
@@ -1966,6 +1964,9 @@ class AdminController extends BaseController
                 (int) $record['failed_deliveries'],
                 number_format((float) ($record['total_due'] ?? 0), 2, '.', ''),
                 number_format((float) ($record['expected_remittance'] ?? 0), 2, '.', ''),
+                number_format((float) ($record['cash_remitted'] ?? 0), 2, '.', ''),
+                number_format((float) ($record['gcash_remitted'] ?? 0), 2, '.', ''),
+                number_format((float) ($record['actual_remitted'] ?? 0), 2, '.', ''),
                 (string) ($record['variance_type'] ?? 'NOT RECORDED'),
             ];
         }
@@ -2372,7 +2373,7 @@ class AdminController extends BaseController
         string $remittanceStatus
     ): DeliveryRecordModel {
         $builder = (new DeliveryRecordModel())
-            ->select('delivery_records.*, riders.name, riders.rider_code, remittances.id AS remittance_id, remittances.variance_type, remittances.supposed_remittance, remittances.actual_remitted, remittance_accounts.account_name AS remittance_account_name, remittance_accounts.account_number AS remittance_account_number')
+            ->select('delivery_records.*, riders.name, riders.rider_code, remittances.id AS remittance_id, remittances.variance_type, remittances.supposed_remittance, remittances.actual_remitted, remittances.cash_remitted, remittances.gcash_remitted, remittances.gcash_reference, remittance_accounts.account_name AS remittance_account_name, remittance_accounts.account_number AS remittance_account_number')
             ->join('riders', 'riders.id = delivery_records.rider_id')
             ->join('remittance_accounts', 'remittance_accounts.id = delivery_records.remittance_account_id', 'left')
             ->join('remittances', 'remittances.delivery_record_id = delivery_records.id', 'left');
@@ -2650,6 +2651,9 @@ class AdminController extends BaseController
         }));
     }
 }
+
+
+
 
 
 

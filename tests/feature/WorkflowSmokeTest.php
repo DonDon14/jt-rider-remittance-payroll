@@ -215,6 +215,62 @@ final class WorkflowSmokeTest extends CIUnitTestCase
         $this->assertSame('SHORT', $remittance['variance_type']);
     }
 
+
+    public function testDenominationCashOverridesStaleZeroFieldAndAddsGcashToGrandTotal(): void
+    {
+        $db = db_connect();
+        $now = date('Y-m-d H:i:s');
+
+        $db->table('delivery_records')->insert([
+            'id' => 2,
+            'rider_id' => 3,
+            'delivery_date' => '2026-04-11',
+            'allocated_parcels' => 20,
+            'successful_deliveries' => 18,
+            'failed_deliveries' => 2,
+            'total_due' => 238.50,
+            'expected_remittance' => 2500.00,
+            'remittance_account_id' => 1,
+            'commission_rate' => 13.25,
+            'notes' => 'Mixed remittance test.',
+            'entry_source' => 'RIDER_SUBMISSION',
+            'source_submission_id' => null,
+            'created_by_user_id' => 1,
+            'last_admin_reason' => 'Seeded for mixed remittance test.',
+            'payroll_id' => null,
+            'created_at' => $now,
+            'updated_at' => $now,
+        ]);
+
+        $security = service('security');
+        $tokenName = $security->getTokenName();
+        $tokenHash = $security->generateHash();
+
+        $result = $this->withSession([
+            'isLoggedIn' => true,
+            'role' => 'admin',
+            'user_id' => 1,
+            'force_password_change' => false,
+            'username' => 'admin',
+        ])->post('/admin/remittance/2', [
+            $tokenName => $tokenHash,
+            'denom_500' => '2',
+            'cash_remitted' => '0',
+            'gcash_remitted' => '1500.00',
+            'gcash_reference' => 'GC-TEST-001',
+        ]);
+
+        $result->assertRedirect();
+        $result->assertRedirectTo(site_url('/admin/remittance/2'));
+
+        $remittance = $db->table('remittances')->where('delivery_record_id', 2)->get()->getRowArray();
+
+        $this->assertNotNull($remittance);
+        $this->assertSame(1000.0, (float) $remittance['cash_remitted']);
+        $this->assertSame(1500.0, (float) $remittance['gcash_remitted']);
+        $this->assertSame(2500.0, (float) $remittance['total_remitted']);
+        $this->assertSame('BALANCED', $remittance['variance_type']);
+    }
     public function testAdminGeneratePayrollLocksCoveredDeliveries(): void
     {
         $db = db_connect();
@@ -682,6 +738,7 @@ final class WorkflowSmokeTest extends CIUnitTestCase
         ]);
     }
 }
+
 
 
 

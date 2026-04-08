@@ -16,8 +16,14 @@
                 denomTotal += count * value;
             });
 
+            const manualCash = Number(cashField?.value || 0);
+
+            if (cashField && denomTotal > 0) {
+                cashField.value = denomTotal.toFixed(2);
+            }
+
             const supposedRaw = supposedField?.value ?? '';
-            const cash = cashField && cashField.value !== '' ? Number(cashField.value || 0) : denomTotal;
+            const cash = denomTotal > 0 ? denomTotal : manualCash;
             const gcash = Number(gcashField?.value || 0);
             const remitted = cash + gcash;
 
@@ -350,6 +356,8 @@
         window.location.reload();
     });
 })();
+
+
 
 
 

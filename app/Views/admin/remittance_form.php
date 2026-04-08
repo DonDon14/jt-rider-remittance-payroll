@@ -44,8 +44,8 @@
                 </div>
                 <div class="col-md-4">
                     <label class="form-label"><strong>Cash Remitted</strong></label>
-                    <input type="number" step="0.01" min="0" name="cash_remitted" placeholder="Leave blank to use denomination total" value="<?= isset($remittance['cash_remitted']) && $remittance['cash_remitted'] !== null ? esc($remittance['cash_remitted']) : '' ?>" class="form-control" data-cash-remitted>
-                    <div class="form-text">If blank, the system uses the denomination total below.</div>
+                    <input type="number" step="0.01" min="0" name="cash_remitted" placeholder="Auto-filled from denominations below" value="<?= isset($remittance['cash_remitted']) && $remittance['cash_remitted'] !== null ? esc($remittance['cash_remitted']) : '' ?>" class="form-control" data-cash-remitted>
+                    <div class="form-text">This updates live from the denomination counts below. If no denominations are entered, you can still type the cash amount manually.</div>
                 </div>
             </div>
 
@@ -82,3 +82,4 @@
 </div>
 
 <?= $this->endSection() ?>
+
