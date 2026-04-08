@@ -13,28 +13,29 @@ This is a Flutter rider app scaffold wired to the mobile API provided by the mai
 - Announcements
 - Logout
 
-## Before running
+## Local run
 
 1. Install Flutter on the machine that will run the mobile app.
 2. From this folder, run `flutter pub get`.
-3. Update the API base URL in `lib/config/app_config.dart`.
-4. Make sure the PHP app is running and reachable from the phone/emulator.
-
-### Local network note
-
-If the backend runs on your laptop and you test on a real phone, do not use `localhost`.
-Use your machine LAN IP, for example:
-
-```dart
-static const String apiBaseUrl = 'http://192.168.1.10:8080/api';
-```
-
-## Suggested first run
+3. Start the backend so the phone or emulator can reach it.
+4. Run with the correct API URL for your environment.
 
 ```bash
 flutter pub get
-flutter run
+flutter run --dart-define=API_BASE_URL=http://192.168.18.74:8081/api
 ```
+
+## Release build
+
+1. Copy `android/key.properties.example` to `android/key.properties`.
+2. Create the keystore file referenced by `storeFile`.
+3. Build with your production API URL.
+
+```bash
+flutter build apk --release --dart-define=API_BASE_URL=https://your-domain.example/api
+```
+
+If `android/key.properties` does not exist, the app falls back to the debug signing config so local testing still works.
 
 ## Rider test flow
 

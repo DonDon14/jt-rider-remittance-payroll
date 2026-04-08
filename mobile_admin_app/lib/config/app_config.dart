@@ -7,6 +7,6 @@ class AppConfig {
   );
   static const String appTitle = String.fromEnvironment(
     'APP_TITLE',
-    defaultValue: 'J&T Rider Portal',
+    defaultValue: 'J&T Admin Portal',
   );
 }

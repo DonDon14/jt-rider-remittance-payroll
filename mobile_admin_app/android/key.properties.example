@@ -1,0 +1,4 @@
+storeFile=../keystore/jt-admin-release.jks
+storePassword=change-me
+keyAlias=jt-admin-release
+keyPassword=change-me

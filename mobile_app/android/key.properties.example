@@ -1,0 +1,4 @@
+storeFile=../keystore/jt-rider-release.jks
+storePassword=change-me
+keyAlias=jt-rider-release
+keyPassword=change-me

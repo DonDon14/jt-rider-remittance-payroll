@@ -302,7 +302,8 @@ class _RequestsTabState extends State<_RequestsTab> {
                     TextField(controller: _expectedController, decoration: const InputDecoration(labelText: 'Expected Remittance'), keyboardType: const TextInputType.numberWithOptions(decimal: true)),
                     const SizedBox(height: 12),
                     DropdownButtonFormField<int>(
-                      value: _selectedAccountId,
+                      key: ValueKey(_selectedAccountId),
+                      initialValue: _selectedAccountId,
                       decoration: const InputDecoration(labelText: 'Remittance Account'),
                       items: accountItems.map((item) => DropdownMenuItem<int>(value: item['id'] as int, child: Text(item['account_name'] as String? ?? ''))).toList(),
                       onChanged: (value) => setState(() => _selectedAccountId = value),
@@ -525,5 +526,6 @@ String _currency(dynamic value) {
   final amount = double.tryParse(value.toString()) ?? 0;
   return 'PHP ${amount.toStringAsFixed(2)}';
 }
+
 
 

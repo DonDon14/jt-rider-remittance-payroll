@@ -3,7 +3,6 @@ import java.util.Properties
 plugins {
     id("com.android.application")
     id("kotlin-android")
-    // The Flutter Gradle Plugin must be applied after the Android and Kotlin Gradle plugins.
     id("dev.flutter.flutter-gradle-plugin")
 }
 
@@ -14,7 +13,7 @@ if (keystorePropertiesFile.exists()) {
 }
 
 android {
-    namespace = "com.jt.remittance.rider"
+    namespace = "com.jt.remittance.admin"
     compileSdk = flutter.compileSdkVersion
     ndkVersion = flutter.ndkVersion
 
@@ -28,7 +27,7 @@ android {
     }
 
     defaultConfig {
-        applicationId = "com.jt.remittance.rider"
+        applicationId = "com.jt.remittance.admin"
         minSdk = flutter.minSdkVersion
         targetSdk = flutter.targetSdkVersion
         versionCode = flutter.versionCode
