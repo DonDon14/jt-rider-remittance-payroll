@@ -16,6 +16,7 @@ $routes->get('/logout', 'AuthController::logout', ['filter' => 'auth']);
 $routes->group('admin', ['filter' => 'admin'], static function ($routes) {
     $routes->get('/', 'AdminController::index');
     $routes->get('riders', 'AdminController::riders');
+    $routes->get('riders/(:num)/portal', 'RiderController::dashboard/$1');
     $routes->get('deliveries', 'AdminController::deliveries');
     $routes->get('history', 'AdminController::deliveryHistory');
     $routes->get('activity', 'AdminController::activity');
@@ -89,6 +90,7 @@ $routes->group('api', static function ($routes) {
     $routes->post('rider/delivery-submissions', 'Api\RiderController::storeSubmission');
     $routes->post('rider/payroll/(:num)/confirm', 'Api\RiderController::confirmPayrollReceipt/$1');
 });
+
 
 
 

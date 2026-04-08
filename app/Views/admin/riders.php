@@ -70,7 +70,7 @@
                                     <?= csrf_field() ?>
                                     <button class="btn btn-sm btn-outline-warning">Reset Password</button>
                                 </form>
-                                <a href="<?= site_url('/rider/' . (int) $rider['id']) ?>" target="_blank" class="btn btn-sm btn-outline-secondary">Open Rider Portal</a>
+                                <a href="<?= site_url('/admin/riders/' . (int) $rider['id'] . '/portal') ?>" target="_blank" class="btn btn-sm btn-outline-secondary">Open Rider Portal</a>
                             </div>
                         </td>
                     </tr>
@@ -237,4 +237,5 @@
 <?php endforeach; ?>
 
 <?= $this->endSection() ?>
+
 

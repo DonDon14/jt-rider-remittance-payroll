@@ -24,7 +24,11 @@ $formatAccountLabel = static function (array $row): string {
             <input type="month" name="month" value="<?= esc($month) ?>" class="form-control">
             <button class="btn btn-primary">Apply</button>
         </form>
-        <button class="btn btn-dark" data-bs-toggle="modal" data-bs-target="#deliveryRequestModal">Submit Delivery Record</button>
+        <?php if (! empty($isAdminPreview)): ?>
+            <span class="badge text-bg-warning d-flex align-items-center px-3">Admin preview mode</span>
+        <?php else: ?>
+            <button class="btn btn-dark" data-bs-toggle="modal" data-bs-target="#deliveryRequestModal">Submit Delivery Record</button>
+        <?php endif; ?>
     </div>
 </div>
 
@@ -218,7 +222,7 @@ $formatAccountLabel = static function (array $row): string {
                         </div>
                         <div class="mt-3 d-flex gap-2 flex-wrap">
                             <a href="<?= site_url('/rider/payroll/' . (int) $payroll['id'] . '/pdf') ?>" class="btn btn-sm btn-outline-dark" target="_blank">Download Payslip</a>
-                            <?php if ($payrollStatus === 'RELEASED'): ?>
+                            <?php if (empty($isAdminPreview) && $payrollStatus === 'RELEASED'): ?>
                                 <button
                                     type="button"
                                     class="btn btn-sm btn-dark"
@@ -266,6 +270,7 @@ $formatAccountLabel = static function (array $row): string {
     </div>
 </div>
 
+<?php if (empty($isAdminPreview)): ?>
 <div class="modal fade" id="deliveryRequestModal" tabindex="-1" aria-hidden="true">
     <div class="modal-dialog modal-dialog-centered modal-lg">
         <div class="modal-content">
@@ -354,8 +359,9 @@ $formatAccountLabel = static function (array $row): string {
         </div>
     </div>
 </div>
+<?php endif; ?>
 
-<?php if (! empty($latestAnnouncementPopup)): ?>
+<?php if (empty($isAdminPreview) && ! empty($latestAnnouncementPopup)): ?>
     <div class="modal fade" id="announcementPopupModal" tabindex="-1" aria-hidden="true">
         <div class="modal-dialog modal-dialog-centered">
             <div class="modal-content">
@@ -425,7 +431,7 @@ document.addEventListener('DOMContentLoaded', () => {
             });
         });
 
-        <?php if (! empty($latestReleasedPayroll) && empty($latestAnnouncementPopup)): ?>
+        <?php if (empty($isAdminPreview) && ! empty($latestReleasedPayroll) && empty($latestAnnouncementPopup)): ?>
         fillPayrollModal({
             id: '<?= (int) $latestReleasedPayroll['id'] ?>',
             range: '<?= esc(($latestReleasedPayroll['start_date'] ?? $latestReleasedPayroll['month_year']) . ' to ' . ($latestReleasedPayroll['end_date'] ?? $latestReleasedPayroll['month_year']), 'js') ?>',
@@ -442,7 +448,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 });
 </script>
-<?php if (! empty($latestAnnouncementPopup)): ?>
+<?php if (empty($isAdminPreview) && ! empty($latestAnnouncementPopup)): ?>
 <script>
 document.addEventListener('DOMContentLoaded', () => {
     const modalElement = document.getElementById('announcementPopupModal');
@@ -456,6 +462,12 @@ document.addEventListener('DOMContentLoaded', () => {
 </script>
 <?php endif; ?>
 <?= $this->endSection() ?>
+
+
+
+
+
+
 
 
 

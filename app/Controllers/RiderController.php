@@ -36,15 +36,18 @@ class RiderController extends BaseController
         $month = $this->request->getGet('month') ?: date('Y-m');
         $monthStart = date('Y-m-01', strtotime($month . '-01'));
         $monthEnd = date('Y-m-t', strtotime($monthStart));
+        $isAdminPreview = session()->get('role') === 'admin';
 
         $rider = (new RiderModel())->find($riderId);
         if (! $rider) {
             throw \CodeIgniter\Exceptions\PageNotFoundException::forPageNotFound('Rider not found.');
         }
         if (! (bool) ($rider['is_active'] ?? true)) {
-            session()->destroy();
+            if (! $isAdminPreview) {
+                session()->destroy();
 
-            return redirect()->to('/login')->with('error', 'Rider account is inactive.');
+                return redirect()->to('/login')->with('error', 'Rider account is inactive.');
+            }
         }
 
         $deliveryModel = new DeliveryRecordModel();
@@ -172,7 +175,7 @@ class RiderController extends BaseController
         $announcements = $this->getActiveAnnouncements();
         $latestAnnouncementPopup = null;
         $user = (new UserModel())->find((int) session()->get('user_id'));
-        if (! empty($announcements)) {
+        if (! $isAdminPreview && ! empty($announcements)) {
             $latestAnnouncement = $announcements[0];
             if ((int) ($user['last_seen_announcement_id'] ?? 0) !== (int) $latestAnnouncement['id']) {
                 $latestAnnouncementPopup = $latestAnnouncement;
@@ -197,7 +200,8 @@ class RiderController extends BaseController
             'latestAnnouncementPopup' => $latestAnnouncementPopup,
             'latestReleasedPayroll' => $latestReleasedPayroll,
             'paydayPreview' => $paydayPreview,
-            'accountSecurity' => ! empty($user['force_password_change']) ? [
+            'isAdminPreview' => $isAdminPreview,
+            'accountSecurity' => ! $isAdminPreview && ! empty($user['force_password_change']) ? [
                 'label' => 'Password update required',
                 'tone' => 'warning',
                 'detail' => 'Change your password before continuing regular use of the portal.',
