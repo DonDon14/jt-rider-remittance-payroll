@@ -666,3 +666,38 @@ body {
     color: #6b7280;
     font-size: 0.92rem;
 }
+
+.admin-sidebar-brand {
+    flex: 1;
+    overflow: hidden;
+}
+
+.admin-sidebar-label {
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.admin-sidebar-brand-wrap {
+    align-items: center;
+}
+
+.admin-sidebar .admin-shell-toggle,
+.admin-shell.is-sidebar-collapsed .admin-sidebar-brand-wrap .admin-shell-toggle,
+.admin-shell.is-sidebar-collapsed .admin-sidebar-brand-wrap:hover .admin-shell-toggle,
+.admin-shell.is-sidebar-collapsed .admin-sidebar-brand-wrap:focus-within .admin-shell-toggle {
+    position: static !important;
+    right: auto !important;
+    opacity: 1 !important;
+    pointer-events: auto !important;
+    width: 40px !important;
+    margin-left: auto;
+    border-width: 1px !important;
+    overflow: visible !important;
+}
+
+.admin-shell.is-sidebar-collapsed .admin-sidebar-brand,
+.admin-shell.is-sidebar-collapsed .admin-sidebar-brand-wrap:hover .admin-sidebar-brand,
+.admin-shell.is-sidebar-collapsed .admin-sidebar-brand-wrap:focus-within .admin-sidebar-brand {
+    opacity: 1 !important;
+    width: 52px !important;
+}

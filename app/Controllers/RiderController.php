@@ -6,12 +6,14 @@ use App\Models\AnnouncementModel;
 use App\Models\DeliveryAuditLogModel;
 use App\Models\DeliveryRecordModel;
 use App\Models\DeliverySubmissionModel;
+use App\Models\PayrollAdjustmentModel;
 use App\Models\PayrollModel;
 use App\Models\RemittanceAccountModel;
 use App\Models\RemittanceModel;
 use App\Models\RiderModel;
 use App\Models\ShortagePaymentModel;
 use App\Models\UserModel;
+use Dompdf\Dompdf;
 
 class RiderController extends BaseController
 {
@@ -145,6 +147,13 @@ class RiderController extends BaseController
             ->where('rider_id', $riderId)
             ->orderBy('end_date', 'DESC')
             ->findAll(6);
+        $latestReleasedPayroll = null;
+        foreach ($payrollHistory as $payrollRow) {
+            if (($payrollRow['payroll_status'] ?? '') === 'RELEASED') {
+                $latestReleasedPayroll = $payrollRow;
+                break;
+            }
+        }
 
         $submissionHistory = (new DeliverySubmissionModel())
             ->select('delivery_submissions.*, remittance_accounts.account_name AS remittance_account_name, remittance_accounts.account_number AS remittance_account_number')
@@ -186,12 +195,13 @@ class RiderController extends BaseController
             'remittanceAccounts' => $remittanceAccounts,
             'announcements' => array_slice($announcements, 0, 6),
             'latestAnnouncementPopup' => $latestAnnouncementPopup,
+            'latestReleasedPayroll' => $latestReleasedPayroll,
             'paydayPreview' => $paydayPreview,
-            'accountSecurity' => [
-                'label' => ! empty($user) && ! empty($user['is_active']) ? 'Password secured' : 'Check account access',
-                'tone' => ! empty($user) && ! empty($user['is_active']) ? 'success' : 'warning',
-                'detail' => 'Use Change Password in the top bar if you need to update your login.',
-            ],
+            'accountSecurity' => ! empty($user['force_password_change']) ? [
+                'label' => 'Password update required',
+                'tone' => 'warning',
+                'detail' => 'Change your password before continuing regular use of the portal.',
+            ] : null,
         ]);
     }
 
@@ -346,6 +356,35 @@ class RiderController extends BaseController
         return redirect()->to('/rider-dashboard')->with('success', 'Payroll receipt confirmed.');
     }
 
+    public function payrollPdf(int $payrollId)
+    {
+        $riderId = $this->resolveSessionRiderId();
+        if ($riderId <= 0) {
+            return redirect()->to('/login')->with('error', 'Rider account is not linked to a rider profile.');
+        }
+
+        $payroll = (new PayrollModel())
+            ->select('payrolls.*, riders.name, riders.rider_code, riders.commission_rate')
+            ->join('riders', 'riders.id = payrolls.rider_id')
+            ->where('payrolls.id', $payrollId)
+            ->first();
+
+        if (! $payroll || (int) ($payroll['rider_id'] ?? 0) !== $riderId) {
+            return redirect()->to('/rider-dashboard')->with('error', 'Payslip not found.');
+        }
+
+        $html = view('pdf/payroll_payslip', [
+            'payroll' => $payroll,
+            'adjustments' => (new PayrollAdjustmentModel())
+                ->where('payroll_id', $payrollId)
+                ->orderBy('type', 'ASC')
+                ->orderBy('description', 'ASC')
+                ->findAll(),
+        ]);
+
+        return $this->renderPdf($html, 'payroll-payslip-' . $payroll['rider_code'] . '-' . $payroll['start_date'] . '.pdf');
+    }
+
     private function resolveSessionRiderId(): int
     {
         $sessionRiderId = (int) session()->get('rider_id');
@@ -415,6 +454,22 @@ class RiderController extends BaseController
         $number = trim((string) ($account['account_number'] ?? ''));
 
         return $number !== '' ? $label . ' (' . $number . ')' : $label;
+    }
+
+    private function renderPdf(string $html, string $filename)
+    {
+        $dompdf = new Dompdf([
+            'isRemoteEnabled' => true,
+        ]);
+
+        $dompdf->loadHtml($html);
+        $dompdf->setPaper('A4', 'portrait');
+        $dompdf->render();
+
+        return $this->response
+            ->setHeader('Content-Type', 'application/pdf')
+            ->setHeader('Content-Disposition', 'inline; filename="' . $filename . '"')
+            ->setBody($dompdf->output());
     }
 
     private function buildPaydayPreview(string $month): array

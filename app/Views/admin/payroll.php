@@ -103,6 +103,82 @@
     </div>
 </div>
 
+<div class="row g-3 mb-3">
+    <div class="col-12">
+        <div class="card">
+            <div class="card-header fw-semibold d-flex justify-content-between align-items-center">
+                <span>Unpaid Salary Summary By Cutoff</span>
+                <span class="small text-muted">Owner view of salaries still waiting to be generated or released</span>
+            </div>
+            <div class="card-body border-bottom">
+                <form method="get" class="row g-2 align-items-end">
+                    <div class="col-md-3">
+                        <label class="form-label">Payroll Month</label>
+                        <input type="month" name="unpaid_month" class="form-control" value="<?= esc($selectedUnpaidMonth) ?>">
+                    </div>
+                    <div class="col-md-3">
+                        <label class="form-label">Cutoff Period</label>
+                        <select name="unpaid_cutoff" class="form-select">
+                            <option value="FIRST" <?= $selectedUnpaidCutoff === 'FIRST' ? 'selected' : '' ?>>1 to 15</option>
+                            <option value="SECOND" <?= $selectedUnpaidCutoff === 'SECOND' ? 'selected' : '' ?>>16 to Month-End</option>
+                        </select>
+                    </div>
+                    <div class="col-md-2 d-grid">
+                        <button class="btn btn-dark">Preview</button>
+                    </div>
+                    <div class="col-md-4 d-grid">
+                        <a href="<?= site_url('/admin/payroll/unpaid-export/csv?' . http_build_query([
+                            'unpaid_month' => $selectedUnpaidMonth,
+                            'unpaid_cutoff' => $selectedUnpaidCutoff,
+                        ])) ?>" class="btn btn-outline-dark">Download Unpaid Salary CSV</a>
+                    </div>
+                </form>
+            </div>
+            <div class="card-body bg-light border-bottom">
+                <div class="row g-3">
+                    <div class="col-md-3"><div class="stat-label">Coverage</div><div class="fw-semibold"><?= esc($unpaidSummary['start_date']) ?> to <?= esc($unpaidSummary['end_date']) ?></div></div>
+                    <div class="col-md-2"><div class="stat-label">Riders</div><div class="fw-semibold"><?= (int) ($unpaidSummary['summary']['rider_count'] ?? 0) ?></div></div>
+                    <div class="col-md-2"><div class="stat-label">Gross</div><div class="fw-semibold">PHP <?= number_format((float) ($unpaidSummary['summary']['gross_total'] ?? 0), 2) ?></div></div>
+                    <div class="col-md-2"><div class="stat-label">Shortages</div><div class="fw-semibold">PHP <?= number_format((float) ($unpaidSummary['summary']['shortage_total'] ?? 0), 2) ?></div></div>
+                    <div class="col-md-3"><div class="stat-label">Net Payables</div><div class="fw-semibold">PHP <?= number_format((float) ($unpaidSummary['summary']['net_total'] ?? 0), 2) ?></div></div>
+                </div>
+            </div>
+            <div class="table-responsive">
+                <table class="table table-hover mb-0">
+                    <thead>
+                        <tr>
+                            <th>Rider</th>
+                            <th>Successful</th>
+                            <th>Gross</th>
+                            <th>Bonus</th>
+                            <th>Deduction</th>
+                            <th>Shortage</th>
+                            <th>Repayments</th>
+                            <th>Net Pay</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <?php foreach ($unpaidSummary['rows'] as $row): ?>
+                            <tr>
+                                <td><?= esc($row['rider_code']) ?> - <?= esc($row['name']) ?></td>
+                                <td><?= (int) ($row['total_successful'] ?? 0) ?></td>
+                                <td>PHP <?= number_format((float) ($row['gross_earnings'] ?? 0), 2) ?></td>
+                                <td>PHP <?= number_format((float) ($row['bonus_total'] ?? 0), 2) ?></td>
+                                <td>PHP <?= number_format((float) ($row['deduction_total'] ?? 0), 2) ?></td>
+                                <td>PHP <?= number_format((float) ($row['shortage_deductions'] ?? 0), 2) ?></td>
+                                <td>PHP <?= number_format((float) ($row['shortage_payments_received'] ?? 0), 2) ?></td>
+                                <td class="fw-semibold">PHP <?= number_format((float) ($row['net_pay'] ?? 0), 2) ?></td>
+                            </tr>
+                        <?php endforeach; ?>
+                        <?php if (empty($unpaidSummary['rows'])): ?>
+                            <tr><td colspan="8" class="text-center text-muted py-4">No unpaid salary items were found for this cutoff.</td></tr>
+                        <?php endif; ?>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+</div>
 <div class="card mb-3">
     <div class="card-header fw-semibold">Filter Payroll History</div>
     <div class="card-body">
@@ -348,6 +424,7 @@ document.addEventListener('DOMContentLoaded', () => {
 });
 </script>
 <?= $this->endSection() ?>
+
 
 
 

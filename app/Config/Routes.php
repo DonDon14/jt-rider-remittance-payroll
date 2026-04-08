@@ -34,6 +34,7 @@ $routes->group('admin', ['filter' => 'admin'], static function ($routes) {
     $routes->get('payroll/(:num)/pdf', 'AdminController::payrollPdf/$1');
     $routes->get('payroll/summary/pdf', 'AdminController::payrollSummaryPdf');
     $routes->get('payroll/export/csv', 'AdminController::payrollCsv');
+    $routes->get('payroll/unpaid-export/csv', 'AdminController::unpaidPayrollCsv');
     $routes->get('history/export/csv', 'AdminController::deliveryHistoryCsv');
     $routes->get('corrections/export/csv', 'AdminController::correctionsCsv');
     $routes->get('adjustments/export/csv', 'AdminController::adjustmentsCsv');
@@ -62,6 +63,7 @@ $routes->group('admin', ['filter' => 'admin'], static function ($routes) {
 
 $routes->get('/rider-dashboard', 'RiderController::ownDashboard', ['filter' => 'rider']);
 $routes->get('/rider/(:num)', 'RiderController::dashboard/$1', ['filter' => 'rider']);
+$routes->get('/rider/payroll/(:num)/pdf', 'RiderController::payrollPdf/$1', ['filter' => 'rider']);
 $routes->post('/rider/delivery-submissions', 'RiderController::storeDeliverySubmission', ['filter' => 'rider']);
 $routes->post('/rider/payroll/(:num)/confirm', 'RiderController::confirmPayrollReceipt/$1', ['filter' => 'rider']);
 $routes->post('/rider/announcements/(:num)/read', 'RiderController::markAnnouncementRead/$1', ['filter' => 'rider']);

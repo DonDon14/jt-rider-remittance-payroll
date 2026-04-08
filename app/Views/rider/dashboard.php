@@ -3,8 +3,8 @@
 
 <?php
 $formatAccountLabel = static function (array $row): string {
-    $name = trim((string) ($row['remittance_account_name'] ?? ''));
-    $number = trim((string) ($row['remittance_account_number'] ?? ''));
+    $name = trim((string) ($row['remittance_account_name'] ?? $row['account_name'] ?? ''));
+    $number = trim((string) ($row['remittance_account_number'] ?? $row['account_number'] ?? ''));
 
     if ($name === '') {
         return '-';
@@ -193,15 +193,28 @@ $formatAccountLabel = static function (array $row): string {
                             </div>
                             <span class="badge <?= $payrollStatus === 'RECEIVED' ? 'badge-over' : ($payrollStatus === 'RELEASED' ? 'badge-balanced' : 'badge-short') ?>"><?= esc($payrollStatus) ?></span>
                         </div>
-                        <?php if ($payrollStatus === 'RELEASED'): ?>
-                            <form method="post" action="<?= site_url('/rider/payroll/' . (int) $payroll['id'] . '/confirm') ?>" class="mt-3">
-                                <?= csrf_field() ?>
-                                <div class="mb-2">
-                                    <textarea name="received_notes" class="form-control form-control-sm" rows="2" maxlength="500" placeholder="Optional note about receiving this salary."></textarea>
-                                </div>
-                                <button class="btn btn-sm btn-dark" onclick="return confirm('Confirm that you have received this payroll amount?');">Confirm Salary Received</button>
-                            </form>
-                        <?php endif; ?>
+                        <div class="mt-3 d-flex gap-2 flex-wrap">
+                            <a href="<?= site_url('/rider/payroll/' . (int) $payroll['id'] . '/pdf') ?>" class="btn btn-sm btn-outline-dark" target="_blank">Download Payslip</a>
+                            <?php if ($payrollStatus === 'RELEASED'): ?>
+                                <button
+                                    type="button"
+                                    class="btn btn-sm btn-dark"
+                                    data-bs-toggle="modal"
+                                    data-bs-target="#confirmPayrollModal"
+                                    data-payroll-id="<?= (int) $payroll['id'] ?>"
+                                    data-payroll-range="<?= esc(($payroll['start_date'] ?? $payroll['month_year']) . ' to ' . ($payroll['end_date'] ?? $payroll['month_year']), 'attr') ?>"
+                                    data-net-pay="<?= esc(number_format((float) ($payroll['net_pay'] ?? 0), 2, '.', ''), 'attr') ?>"
+                                    data-gross-earnings="<?= esc(number_format((float) ($payroll['gross_earnings'] ?? 0), 2, '.', ''), 'attr') ?>"
+                                    data-shortage="<?= esc(number_format((float) ($payroll['shortage_deductions'] ?? 0), 2, '.', ''), 'attr') ?>"
+                                    data-repayments="<?= esc(number_format((float) ($payroll['shortage_payments_received'] ?? 0), 2, '.', ''), 'attr') ?>"
+                                    data-payout-method="<?= esc(str_replace('_', ' ', (string) ($payroll['payout_method'] ?? '')), 'attr') ?>"
+                                    data-payout-reference="<?= esc((string) ($payroll['payout_reference'] ?? ''), 'attr') ?>"
+                                    data-released-at="<?= esc((string) ($payroll['released_at'] ?? ''), 'attr') ?>"
+                                >
+                                    Review &amp; Confirm
+                                </button>
+                            <?php endif; ?>
+                        </div>
                     </div>
                 <?php endforeach; ?>
                 <?php if (empty($payrollHistory)): ?>
@@ -287,6 +300,38 @@ $formatAccountLabel = static function (array $row): string {
     </div>
 </div>
 
+<div class="modal fade" id="confirmPayrollModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Salary Release Details</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <div class="small text-muted mb-3">Review the released payroll details below before confirming receipt.</div>
+                <div class="border rounded p-3 bg-light mb-3">
+                    <div><strong>Coverage:</strong> <span data-payroll-range-display>-</span></div>
+                    <div><strong>Net Pay:</strong> PHP <span data-payroll-net-display>0.00</span></div>
+                    <div><strong>Gross Earnings:</strong> PHP <span data-payroll-gross-display>0.00</span></div>
+                    <div><strong>Shortage Deductions:</strong> PHP <span data-payroll-shortage-display>0.00</span></div>
+                    <div><strong>Repayments:</strong> PHP <span data-payroll-repayment-display>0.00</span></div>
+                    <div><strong>Payout Method:</strong> <span data-payroll-method-display>-</span></div>
+                    <div><strong>Reference:</strong> <span data-payroll-reference-display>-</span></div>
+                    <div><strong>Released At:</strong> <span data-payroll-released-display>-</span></div>
+                </div>
+                <form method="post" action="<?= site_url('/rider/payroll/0/confirm') ?>" id="confirmPayrollForm">
+                    <?= csrf_field() ?>
+                    <div class="mb-3">
+                        <label class="form-label">Optional Note</label>
+                        <textarea name="received_notes" class="form-control form-control-sm" rows="3" maxlength="500" placeholder="Optional note about receiving this salary."></textarea>
+                    </div>
+                    <button class="btn btn-dark w-100">Confirm Salary Received</button>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+
 <?php if (! empty($latestAnnouncementPopup)): ?>
     <div class="modal fade" id="announcementPopupModal" tabindex="-1" aria-hidden="true">
         <div class="modal-dialog modal-dialog-centered">
@@ -311,6 +356,69 @@ $formatAccountLabel = static function (array $row): string {
 <?= $this->endSection() ?>
 
 <?= $this->section('scripts') ?>
+<script>
+document.addEventListener('DOMContentLoaded', () => {
+    const payrollModal = document.getElementById('confirmPayrollModal');
+    if (payrollModal) {
+        const form = document.getElementById('confirmPayrollForm');
+        const map = {
+            range: payrollModal.querySelector('[data-payroll-range-display]'),
+            net: payrollModal.querySelector('[data-payroll-net-display]'),
+            gross: payrollModal.querySelector('[data-payroll-gross-display]'),
+            shortage: payrollModal.querySelector('[data-payroll-shortage-display]'),
+            repayment: payrollModal.querySelector('[data-payroll-repayment-display]'),
+            method: payrollModal.querySelector('[data-payroll-method-display]'),
+            reference: payrollModal.querySelector('[data-payroll-reference-display]'),
+            released: payrollModal.querySelector('[data-payroll-released-display]'),
+        };
+        const fillPayrollModal = (payload) => {
+            form.action = '<?= site_url('/rider/payroll') ?>/' + (payload.id || '0') + '/confirm';
+            map.range.textContent = payload.range || '-';
+            map.net.textContent = payload.net || '0.00';
+            map.gross.textContent = payload.gross || '0.00';
+            map.shortage.textContent = payload.shortage || '0.00';
+            map.repayment.textContent = payload.repayment || '0.00';
+            map.method.textContent = payload.method || '-';
+            map.reference.textContent = payload.reference || '-';
+            map.released.textContent = payload.released || '-';
+        };
+
+        payrollModal.addEventListener('show.bs.modal', (event) => {
+            const trigger = event.relatedTarget;
+            if (!trigger) {
+                return;
+            }
+
+            fillPayrollModal({
+                id: trigger.getAttribute('data-payroll-id') || '0',
+                range: trigger.getAttribute('data-payroll-range') || '-',
+                net: trigger.getAttribute('data-net-pay') || '0.00',
+                gross: trigger.getAttribute('data-gross-earnings') || '0.00',
+                shortage: trigger.getAttribute('data-shortage') || '0.00',
+                repayment: trigger.getAttribute('data-repayments') || '0.00',
+                method: trigger.getAttribute('data-payout-method') || '-',
+                reference: trigger.getAttribute('data-payout-reference') || '-',
+                released: trigger.getAttribute('data-released-at') || '-',
+            });
+        });
+
+        <?php if (! empty($latestReleasedPayroll) && empty($latestAnnouncementPopup)): ?>
+        fillPayrollModal({
+            id: '<?= (int) $latestReleasedPayroll['id'] ?>',
+            range: '<?= esc(($latestReleasedPayroll['start_date'] ?? $latestReleasedPayroll['month_year']) . ' to ' . ($latestReleasedPayroll['end_date'] ?? $latestReleasedPayroll['month_year']), 'js') ?>',
+            net: '<?= esc(number_format((float) ($latestReleasedPayroll['net_pay'] ?? 0), 2, '.', ''), 'js') ?>',
+            gross: '<?= esc(number_format((float) ($latestReleasedPayroll['gross_earnings'] ?? 0), 2, '.', ''), 'js') ?>',
+            shortage: '<?= esc(number_format((float) ($latestReleasedPayroll['shortage_deductions'] ?? 0), 2, '.', ''), 'js') ?>',
+            repayment: '<?= esc(number_format((float) ($latestReleasedPayroll['shortage_payments_received'] ?? 0), 2, '.', ''), 'js') ?>',
+            method: '<?= esc(str_replace('_', ' ', (string) ($latestReleasedPayroll['payout_method'] ?? '')), 'js') ?>',
+            reference: '<?= esc((string) ($latestReleasedPayroll['payout_reference'] ?? ''), 'js') ?>',
+            released: '<?= esc((string) ($latestReleasedPayroll['released_at'] ?? ''), 'js') ?>',
+        });
+        new bootstrap.Modal(payrollModal).show();
+        <?php endif; ?>
+    }
+});
+</script>
 <?php if (! empty($latestAnnouncementPopup)): ?>
 <script>
 document.addEventListener('DOMContentLoaded', () => {
@@ -325,6 +433,4 @@ document.addEventListener('DOMContentLoaded', () => {
 </script>
 <?php endif; ?>
 <?= $this->endSection() ?>
-
-
 

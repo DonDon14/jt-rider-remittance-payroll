@@ -360,6 +360,12 @@ class AdminController extends BaseController
         $selectedPayrollMonth = trim((string) $this->request->getGet('payroll_month'));
         $selectedCutoff = trim((string) $this->request->getGet('cutoff_period'));
         $selectedPayrollStatus = trim((string) $this->request->getGet('payroll_status'));
+        [$defaultStart, $defaultEnd, $defaultCutoff] = $this->getCutoffWindow(date('Y-m'), (int) date('j') <= 15 ? 'FIRST' : 'SECOND');
+        $selectedUnpaidMonth = trim((string) $this->request->getGet('unpaid_month')) ?: substr($defaultStart, 0, 7);
+        $selectedUnpaidCutoff = trim((string) $this->request->getGet('unpaid_cutoff'));
+        if (! in_array($selectedUnpaidCutoff, ['FIRST', 'SECOND'], true)) {
+            $selectedUnpaidCutoff = $defaultCutoff;
+        }
 
         $payrollModel = $this->buildPayrollQuery($selectedRiderId, $selectedPayrollMonth, $selectedCutoff, $selectedPayrollStatus);
         $payrolls = $payrollModel->paginate(20, 'payrolls');
@@ -424,8 +430,7 @@ class AdminController extends BaseController
             'received' => round((float) ($payoutSummary['RECEIVED']['net_total'] ?? 0), 2),
             'total_outstanding' => $totalOutstandingPayables,
         ];
-
-        [$defaultStart, $defaultEnd, $defaultCutoff] = $this->getCutoffWindow(date('Y-m'), (int) date('j') <= 15 ? 'FIRST' : 'SECOND');
+        $unpaidSummary = $this->buildUnpaidPayrollPreview($selectedUnpaidMonth, $selectedUnpaidCutoff);
 
         return view('admin/payroll', array_merge(
             $this->adminBaseData('payroll'),
@@ -437,10 +442,13 @@ class AdminController extends BaseController
                 'cutoffSummaries' => $cutoffSummaries,
                 'payoutSummary' => $payoutSummary,
                 'payablesSummary' => $payablesSummary,
+                'unpaidSummary' => $unpaidSummary,
                 'selectedRiderId' => $selectedRiderId,
                 'selectedPayrollMonth' => $selectedPayrollMonth,
                 'selectedCutoff' => $selectedCutoff,
                 'selectedPayrollStatus' => $selectedPayrollStatus,
+                'selectedUnpaidMonth' => $selectedUnpaidMonth,
+                'selectedUnpaidCutoff' => $selectedUnpaidCutoff,
                 'pager' => $payrollModel->pager,
                 'pageGroup' => 'payrolls',
             ]
@@ -504,6 +512,60 @@ class AdminController extends BaseController
         return $this->response
             ->setHeader('Content-Type', 'text/csv')
             ->setHeader('Content-Disposition', 'attachment; filename="payroll-disbursement-export.csv"')
+            ->setBody($csv);
+    }
+
+    public function unpaidPayrollCsv()
+    {
+        $payrollMonth = trim((string) $this->request->getGet('unpaid_month'));
+        $cutoffPeriod = trim((string) $this->request->getGet('unpaid_cutoff'));
+
+        if ($payrollMonth === '' || ! preg_match('/^\d{4}\-\d{2}$/', $payrollMonth) || ! in_array($cutoffPeriod, ['FIRST', 'SECOND'], true)) {
+            return redirect()->to('/admin/payroll')->with('error', 'A valid unpaid cutoff range is required.');
+        }
+
+        $summary = $this->buildUnpaidPayrollPreview($payrollMonth, $cutoffPeriod);
+        $lines = [[
+            'Date Range',
+            'Rider Code',
+            'Rider Name',
+            'Successful Deliveries',
+            'Gross Earnings',
+            'Bonuses',
+            'Deductions',
+            'Shortage Deductions',
+            'Repayments',
+            'Outstanding Shortage Balance',
+            'Net Pay',
+        ]];
+
+        foreach ($summary['rows'] as $row) {
+            $lines[] = [
+                (string) $summary['start_date'] . ' to ' . (string) $summary['end_date'],
+                (string) ($row['rider_code'] ?? ''),
+                (string) ($row['name'] ?? ''),
+                (int) ($row['total_successful'] ?? 0),
+                number_format((float) ($row['gross_earnings'] ?? 0), 2, '.', ''),
+                number_format((float) ($row['bonus_total'] ?? 0), 2, '.', ''),
+                number_format((float) ($row['deduction_total'] ?? 0), 2, '.', ''),
+                number_format((float) ($row['shortage_deductions'] ?? 0), 2, '.', ''),
+                number_format((float) ($row['shortage_payments_received'] ?? 0), 2, '.', ''),
+                number_format((float) ($row['outstanding_shortage_balance'] ?? 0), 2, '.', ''),
+                number_format((float) ($row['net_pay'] ?? 0), 2, '.', ''),
+            ];
+        }
+
+        $handle = fopen('php://temp', 'r+');
+        foreach ($lines as $line) {
+            fputcsv($handle, $line);
+        }
+        rewind($handle);
+        $csv = stream_get_contents($handle) ?: '';
+        fclose($handle);
+
+        return $this->response
+            ->setHeader('Content-Type', 'text/csv')
+            ->setHeader('Content-Disposition', 'attachment; filename="unpaid-payroll-' . $summary['start_date'] . '-to-' . $summary['end_date'] . '.csv"')
             ->setBody($csv);
     }
 
@@ -2161,6 +2223,103 @@ class AdminController extends BaseController
         }
 
         return [$payrollMonth . '-16', $monthEnd, 'SECOND'];
+    }
+
+    private function buildUnpaidPayrollPreview(string $payrollMonth, string $cutoffPeriod): array
+    {
+        [$startDate, $endDate, $resolvedCutoff] = $this->getCutoffWindow($payrollMonth, $cutoffPeriod);
+        $rows = [];
+
+        foreach ((new RiderModel())->where('is_active', 1)->orderBy('name', 'ASC')->findAll() as $rider) {
+            $draft = $this->buildPayrollDraftForRider((int) $rider['id'], $startDate, $endDate);
+            if ($draft === null) {
+                continue;
+            }
+
+            $rows[] = array_merge([
+                'rider_code' => (string) ($rider['rider_code'] ?? ''),
+                'name' => (string) ($rider['name'] ?? ''),
+            ], $draft);
+        }
+
+        return [
+            'payroll_month' => $payrollMonth,
+            'cutoff' => $resolvedCutoff,
+            'label' => $resolvedCutoff === 'FIRST' ? '1 to 15' : '16 to Month-End',
+            'start_date' => $startDate,
+            'end_date' => $endDate,
+            'rows' => $rows,
+            'summary' => [
+                'rider_count' => count($rows),
+                'gross_total' => round(array_sum(array_map(static fn (array $row): float => (float) ($row['gross_earnings'] ?? 0), $rows)), 2),
+                'bonus_total' => round(array_sum(array_map(static fn (array $row): float => (float) ($row['bonus_total'] ?? 0), $rows)), 2),
+                'deduction_total' => round(array_sum(array_map(static fn (array $row): float => (float) ($row['deduction_total'] ?? 0), $rows)), 2),
+                'shortage_total' => round(array_sum(array_map(static fn (array $row): float => (float) ($row['shortage_deductions'] ?? 0), $rows)), 2),
+                'repayment_total' => round(array_sum(array_map(static fn (array $row): float => (float) ($row['shortage_payments_received'] ?? 0), $rows)), 2),
+                'net_total' => round(array_sum(array_map(static fn (array $row): float => (float) ($row['net_pay'] ?? 0), $rows)), 2),
+            ],
+        ];
+    }
+
+    private function buildPayrollDraftForRider(int $riderId, string $startDate, string $endDate): ?array
+    {
+        $deliveries = (new DeliveryRecordModel())
+            ->where('rider_id', $riderId)
+            ->where('delivery_date >=', $startDate)
+            ->where('delivery_date <=', $endDate)
+            ->where('payroll_id', null)
+            ->findAll();
+
+        $shortagePayments = (new ShortagePaymentModel())
+            ->where('rider_id', $riderId)
+            ->where('payment_date >=', $startDate)
+            ->where('payment_date <=', $endDate)
+            ->where('payroll_id', null)
+            ->findAll();
+
+        $adjustments = (new PayrollAdjustmentModel())
+            ->where('rider_id', $riderId)
+            ->where('adjustment_date >=', $startDate)
+            ->where('adjustment_date <=', $endDate)
+            ->where('payroll_id', null)
+            ->findAll();
+
+        if ($deliveries === [] && $shortagePayments === [] && $adjustments === []) {
+            return null;
+        }
+
+        $deliveryIds = array_map(static fn (array $delivery): int => (int) $delivery['id'], $deliveries);
+        $remittances = $deliveryIds === []
+            ? []
+            : (new RemittanceModel())->whereIn('delivery_record_id', $deliveryIds)->findAll();
+
+        $grossEarnings = round(array_sum(array_column($deliveries, 'total_due')), 2);
+        $bonusTotal = round(array_sum(array_map(
+            static fn (array $adjustment): float => ($adjustment['type'] ?? '') === 'BONUS' ? (float) ($adjustment['amount'] ?? 0) : 0.0,
+            $adjustments
+        )), 2);
+        $deductionTotal = round(array_sum(array_map(
+            static fn (array $adjustment): float => ($adjustment['type'] ?? '') === 'DEDUCTION' ? (float) ($adjustment['amount'] ?? 0) : 0.0,
+            $adjustments
+        )), 2);
+        $shortageDeductions = round(array_sum(array_map(
+            static fn (array $remittance): float => ($remittance['variance_type'] ?? '') === 'SHORT' ? (float) ($remittance['variance_amount'] ?? 0) : 0.0,
+            $remittances
+        )), 2);
+        $shortagePaymentsReceived = round(array_sum(array_column($shortagePayments, 'amount')), 2);
+        $netPay = round($grossEarnings - $shortageDeductions + $shortagePaymentsReceived + $bonusTotal - $deductionTotal, 2);
+
+        return [
+            'rider_id' => $riderId,
+            'total_successful' => array_sum(array_column($deliveries, 'successful_deliveries')),
+            'gross_earnings' => $grossEarnings,
+            'bonus_total' => $bonusTotal,
+            'deduction_total' => $deductionTotal,
+            'shortage_deductions' => $shortageDeductions,
+            'shortage_payments_received' => $shortagePaymentsReceived,
+            'outstanding_shortage_balance' => $this->calculateOutstandingShortageBalance($riderId, $endDate),
+            'net_pay' => $netPay,
+        ];
     }
 
     private function buildRiderQuery(string $search, string $status): RiderModel

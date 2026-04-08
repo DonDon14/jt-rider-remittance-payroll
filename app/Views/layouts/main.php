@@ -60,7 +60,7 @@ $navGroups = [
                 <div class="admin-sidebar-brand-wrap">
                     <a class="admin-sidebar-brand" href="<?= site_url('/admin') ?>">
                         <span class="admin-sidebar-brand-mark">J&amp;T</span>
-                        <span class="admin-sidebar-label">Home Claveria Branch</span>
+                        <span class="admin-sidebar-label">Claveria Branch</span>
                     </a>
                     <button type="button" class="btn admin-shell-toggle d-none d-lg-inline-flex" data-sidebar-toggle aria-label="Toggle sidebar">
                         <i class="bi bi-layout-sidebar-inset"></i>
@@ -178,6 +178,7 @@ $navGroups = [
 <?= $this->renderSection('scripts') ?>
 </body>
 </html>
+
 
 
 
