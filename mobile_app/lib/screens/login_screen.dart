@@ -34,6 +34,8 @@ class _LoginScreenState extends State<LoginScreen> {
       return;
     }
 
+    FocusScope.of(context).unfocus();
+
     setState(() {
       _submitting = true;
       _error = null;
@@ -45,9 +47,9 @@ class _LoginScreenState extends State<LoginScreen> {
         password: _passwordController.text,
       );
     } on ApiException catch (error) {
-      setState(() {
-        _error = error.message;
-      });
+      _showError(error.message);
+    } catch (_) {
+      _showError('Unexpected login error. Please try again.');
     } finally {
       if (mounted) {
         setState(() {
@@ -55,6 +57,20 @@ class _LoginScreenState extends State<LoginScreen> {
         });
       }
     }
+  }
+
+  void _showError(String message) {
+    if (!mounted) {
+      return;
+    }
+
+    setState(() {
+      _error = message;
+    });
+
+    ScaffoldMessenger.of(context)
+      ..hideCurrentSnackBar()
+      ..showSnackBar(SnackBar(content: Text(message)));
   }
 
   @override
