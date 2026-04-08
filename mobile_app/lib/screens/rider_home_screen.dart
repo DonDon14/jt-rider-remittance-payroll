@@ -202,6 +202,7 @@ class _RequestsTabState extends State<_RequestsTab> {
     super.initState();
     _submissionsFuture = widget.apiClient.getAuthed('rider/submissions', widget.token, query: const {'page': '1', 'per_page': '20'});
     _accountsFuture = widget.apiClient.getAuthed('rider/remittance-accounts', widget.token);
+    _dateController.text = _formatDate(DateTime.now());
   }
 
   @override
@@ -258,6 +259,23 @@ class _RequestsTabState extends State<_RequestsTab> {
     ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(message)));
   }
 
+  Future<void> _pickDate() async {
+    final current = _tryParseDate(_dateController.text) ?? DateTime.now();
+    final selected = await showDatePicker(
+      context: context,
+      initialDate: current,
+      firstDate: DateTime.now().subtract(const Duration(days: 45)),
+      lastDate: DateTime.now().add(const Duration(days: 14)),
+      helpText: 'Choose delivery date',
+    );
+
+    if (selected != null) {
+      setState(() {
+        _dateController.text = _formatDate(selected);
+      });
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return FutureBuilder<Map<String, dynamic>>(
@@ -293,7 +311,16 @@ class _RequestsTabState extends State<_RequestsTab> {
                   children: [
                     Text('Submit Delivery Request', style: Theme.of(context).textTheme.titleMedium),
                     const SizedBox(height: 12),
-                    TextField(controller: _dateController, decoration: const InputDecoration(labelText: 'Delivery Date', hintText: 'YYYY-MM-DD')),
+                    TextField(
+                      controller: _dateController,
+                      readOnly: true,
+                      onTap: _pickDate,
+                      decoration: const InputDecoration(
+                        labelText: 'Delivery Date',
+                        prefixIcon: Icon(Icons.calendar_month_outlined),
+                        suffixIcon: Icon(Icons.expand_more_rounded),
+                      ),
+                    ),
                     const SizedBox(height: 12),
                     TextField(controller: _allocatedController, decoration: const InputDecoration(labelText: 'Allocated Parcels'), keyboardType: TextInputType.number),
                     const SizedBox(height: 12),
@@ -527,5 +554,22 @@ String _currency(dynamic value) {
   return 'PHP ${amount.toStringAsFixed(2)}';
 }
 
+
+
+
+DateTime? _tryParseDate(String value) {
+  try {
+    return DateTime.parse(value);
+  } catch (_) {
+    return null;
+  }
+}
+
+String _formatDate(DateTime date) {
+  final year = date.year.toString().padLeft(4, '0');
+  final month = date.month.toString().padLeft(2, '0');
+  final day = date.day.toString().padLeft(2, '0');
+  return "$year-$month-$day";
+}
 
 

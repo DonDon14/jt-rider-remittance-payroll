@@ -75,68 +75,153 @@ class _LoginScreenState extends State<LoginScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
     return Scaffold(
-      body: SafeArea(
-        child: Center(
-          child: SingleChildScrollView(
-            padding: const EdgeInsets.all(24),
-            child: ConstrainedBox(
-              constraints: const BoxConstraints(maxWidth: 420),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  Text(
-                    'J&T Rider Portal',
-                    style: Theme.of(context).textTheme.headlineMedium,
-                  ),
-                  const SizedBox(height: 8),
-                  Text(
-                    'Sign in using your rider account.',
-                    style: Theme.of(context).textTheme.bodyMedium,
-                  ),
-                  const SizedBox(height: 24),
-                  Card(
-                    child: Padding(
-                      padding: const EdgeInsets.all(20),
-                      child: Form(
-                        key: _formKey,
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.stretch,
-                          children: [
-                            TextFormField(
-                              controller: _usernameController,
-                              decoration: const InputDecoration(labelText: 'Username'),
-                              validator: (value) => (value == null || value.trim().isEmpty)
-                                  ? 'Enter your username.'
-                                  : null,
+      body: Container(
+        decoration: const BoxDecoration(
+          gradient: LinearGradient(
+            colors: [Color(0xFFF9EFE6), Color(0xFFF4F1EC), Color(0xFFE8F0F5)],
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+          ),
+        ),
+        child: SafeArea(
+          child: Center(
+            child: SingleChildScrollView(
+              padding: const EdgeInsets.all(24),
+              child: ConstrainedBox(
+                constraints: const BoxConstraints(maxWidth: 430),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.all(28),
+                      decoration: BoxDecoration(
+                        borderRadius: BorderRadius.circular(32),
+                        gradient: const LinearGradient(
+                          colors: [Color(0xFFD85617), Color(0xFFF08A24)],
+                          begin: Alignment.topLeft,
+                          end: Alignment.bottomRight,
+                        ),
+                        boxShadow: const [
+                          BoxShadow(
+                            color: Color(0x2FD85617),
+                            blurRadius: 28,
+                            offset: Offset(0, 18),
+                          ),
+                        ],
+                      ),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Container(
+                            width: 58,
+                            height: 58,
+                            decoration: BoxDecoration(
+                              color: Colors.white.withValues(alpha: 0.18),
+                              borderRadius: BorderRadius.circular(18),
                             ),
-                            const SizedBox(height: 16),
-                            TextFormField(
-                              controller: _passwordController,
-                              obscureText: true,
-                              decoration: const InputDecoration(labelText: 'Password'),
-                              validator: (value) => (value == null || value.isEmpty)
-                                  ? 'Enter your password.'
-                                  : null,
+                            child: const Icon(Icons.local_shipping_rounded, color: Colors.white, size: 28),
+                          ),
+                          const SizedBox(height: 20),
+                          Text(
+                            'JT Rider',
+                            style: theme.textTheme.headlineMedium?.copyWith(
+                              color: Colors.white,
+                              fontWeight: FontWeight.w800,
                             ),
-                            if (_error != null) ...[
-                              const SizedBox(height: 16),
+                          ),
+                          const SizedBox(height: 8),
+                          Text(
+                            'Track payables, submit remittance requests, and confirm payroll from one rider workspace.',
+                            style: theme.textTheme.bodyLarge?.copyWith(
+                              color: Colors.white.withValues(alpha: 0.92),
+                              height: 1.4,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(height: 22),
+                    Card(
+                      child: Padding(
+                        padding: const EdgeInsets.all(24),
+                        child: Form(
+                          key: _formKey,
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.stretch,
+                            children: [
                               Text(
-                                _error!,
-                                style: TextStyle(color: Theme.of(context).colorScheme.error),
+                                'Sign in',
+                                style: theme.textTheme.headlineSmall?.copyWith(
+                                  fontWeight: FontWeight.w800,
+                                  color: const Color(0xFF18212B),
+                                ),
+                              ),
+                              const SizedBox(height: 8),
+                              Text(
+                                'Use your rider account credentials to access the live portal.',
+                                style: theme.textTheme.bodyMedium?.copyWith(
+                                  color: const Color(0xFF5E6875),
+                                ),
+                              ),
+                              const SizedBox(height: 20),
+                              TextFormField(
+                                controller: _usernameController,
+                                decoration: const InputDecoration(
+                                  labelText: 'Username',
+                                  prefixIcon: Icon(Icons.badge_outlined),
+                                ),
+                                validator: (value) => (value == null || value.trim().isEmpty)
+                                    ? 'Enter your username.'
+                                    : null,
+                              ),
+                              const SizedBox(height: 16),
+                              TextFormField(
+                                controller: _passwordController,
+                                obscureText: true,
+                                decoration: const InputDecoration(
+                                  labelText: 'Password',
+                                  prefixIcon: Icon(Icons.lock_outline_rounded),
+                                ),
+                                validator: (value) => (value == null || value.isEmpty)
+                                    ? 'Enter your password.'
+                                    : null,
+                                onFieldSubmitted: (_) => _submitting ? null : _submit(),
+                              ),
+                              if (_error != null) ...[
+                                const SizedBox(height: 14),
+                                Container(
+                                  padding: const EdgeInsets.all(14),
+                                  decoration: BoxDecoration(
+                                    color: theme.colorScheme.errorContainer,
+                                    borderRadius: BorderRadius.circular(18),
+                                  ),
+                                  child: Text(
+                                    _error!,
+                                    style: TextStyle(color: theme.colorScheme.onErrorContainer),
+                                  ),
+                                ),
+                              ],
+                              const SizedBox(height: 22),
+                              FilledButton.icon(
+                                onPressed: _submitting ? null : _submit,
+                                icon: _submitting
+                                    ? const SizedBox(
+                                        width: 18,
+                                        height: 18,
+                                        child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                                      )
+                                    : const Icon(Icons.arrow_forward_rounded),
+                                label: Text(_submitting ? 'Signing in...' : 'Open Rider Portal'),
                               ),
                             ],
-                            const SizedBox(height: 20),
-                            FilledButton(
-                              onPressed: _submitting ? null : _submit,
-                              child: Text(_submitting ? 'Signing in...' : 'Sign In'),
-                            ),
-                          ],
+                          ),
                         ),
                       ),
                     ),
-                  ),
-                ],
+                  ],
+                ),
               ),
             ),
           ),
