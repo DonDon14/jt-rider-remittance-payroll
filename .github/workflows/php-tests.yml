@@ -1,0 +1,35 @@
+name: PHP Tests
+
+on:
+  push:
+    branches: ["main"]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: "8.4"
+          coverage: none
+          extensions: mbstring, intl, mysqli, sqlite3
+
+      - name: Copy test env
+        run: cp env .env
+
+      - name: Configure test base URL
+        run: |
+          echo "CI_ENVIRONMENT = testing" >> .env
+          echo "app.baseURL = 'http://localhost:8080/'" >> .env
+
+      - name: Install dependencies
+        run: composer install --no-interaction --prefer-dist
+
+      - name: Run PHPUnit
+        run: php vendor/bin/phpunit
