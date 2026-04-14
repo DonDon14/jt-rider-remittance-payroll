@@ -6,9 +6,13 @@ use CodeIgniter\Router\RouteCollection;
  * @var RouteCollection $routes
  */
 $routes->get('/', 'Home::index');
+$routes->options('api', 'Api\CorsController::preflight');
+$routes->options('api/(.*)', 'Api\CorsController::preflight');
 
 $routes->get('/login', 'AuthController::loginForm');
 $routes->post('/login', 'AuthController::login');
+$routes->get('/forgot-password', 'AuthController::forgotPasswordForm');
+$routes->post('/forgot-password', 'AuthController::forgotPassword');
 $routes->get('/change-password', 'AuthController::changePasswordForm', ['filter' => 'auth']);
 $routes->post('/change-password', 'AuthController::updatePassword', ['filter' => 'auth']);
 $routes->get('/logout', 'AuthController::logout', ['filter' => 'auth']);
@@ -57,6 +61,7 @@ $routes->group('admin', ['filter' => 'admin'], static function ($routes) {
     $routes->post('delivery-corrections/(:num)/apply', 'AdminController::applyDeliveryCorrectionRequest/$1');
     $routes->post('delivery-corrections/(:num)/reject', 'AdminController::rejectDeliveryCorrectionRequest/$1');
     $routes->post('remittance/(:num)', 'AdminController::saveRemittance/$1');
+    $routes->post('remittance/(:num)/delete', 'AdminController::deletePendingRemittance/$1');
     $routes->post('shortages/(:num)/payment', 'AdminController::recordShortagePayment/$1');
     $routes->post('payroll/generate', 'AdminController::generatePayroll');
     $routes->post('payroll/(:num)/release', 'AdminController::releasePayroll/$1');
@@ -72,6 +77,7 @@ $routes->post('/rider/announcements/(:num)/read', 'RiderController::markAnnounce
 
 $routes->group('api', static function ($routes) {
     $routes->post('login', 'Api\AuthController::login');
+    $routes->post('forgot-password', 'Api\AuthController::forgotPassword');
     $routes->post('logout', 'Api\AuthController::logout');
     $routes->post('logout-all', 'Api\AuthController::logoutAll');
     $routes->get('admin/pending-submissions', 'Api\AdminController::pendingSubmissions');
@@ -81,8 +87,12 @@ $routes->group('api', static function ($routes) {
     $routes->get('admin/pending-remittances', 'Api\AdminController::pendingRemittances');
     $routes->get('admin/remittances/(:num)', 'Api\AdminController::remittanceDetail/$1');
     $routes->post('admin/remittances/(:num)/collect', 'Api\AdminController::saveRemittance/$1');
+    $routes->post('admin/remittances/(:num)/delete', 'Api\AdminController::deletePendingRemittance/$1');
     $routes->get('admin/shortages', 'Api\AdminController::shortages');
+    $routes->post('admin/shortages/(:num)/collect', 'Api\AdminController::recordShortagePayment/$1');
+    $routes->get('admin/riders', 'Api\AdminController::riders');
     $routes->get('admin/payrolls', 'Api\AdminController::payrolls');
+    $routes->post('admin/payrolls/generate', 'Api\AdminController::generatePayroll');
     $routes->post('admin/payrolls/(:num)/release', 'Api\AdminController::releasePayroll/$1');
     $routes->get('rider/profile', 'Api\RiderController::profile');
     $routes->get('rider/dashboard', 'Api\RiderController::dashboard');
@@ -92,6 +102,7 @@ $routes->group('api', static function ($routes) {
     $routes->get('rider/remittance-accounts', 'Api\RiderController::remittanceAccounts');
     $routes->post('rider/delivery-submissions', 'Api\RiderController::storeSubmission');
     $routes->post('rider/payroll/(:num)/confirm', 'Api\RiderController::confirmPayrollReceipt/$1');
+    $routes->get('rider/payroll/(:num)/pdf', 'Api\RiderController::payrollPdf/$1');
 });
 
 

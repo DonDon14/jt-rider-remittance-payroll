@@ -89,8 +89,12 @@ unset($pendingQuery[$pendingPageName]);
                                 <td>PHP <?= number_format((float) ($record['expected_remittance'] ?? 0), 2) ?></td>
                                 <td><?= (int) $record['aging_days'] ?> day(s)</td>
                                 <td><span class="badge <?= $record['pending_status'] === 'OVERDUE' ? 'text-bg-danger' : 'text-bg-warning' ?>"><?= esc($record['pending_status']) ?></span></td>
-                                <td>
+                                <td class="text-nowrap">
                                     <button type="button" class="btn btn-sm btn-danger" data-bs-toggle="modal" data-bs-target="#remittanceModal" data-modal-title="Remittance Entry" data-modal-url="<?= site_url('/admin/remittance/' . (int) $record['id']) . '?modal=1' ?>" data-modal-frame>Collect</button>
+                                    <form action="<?= site_url('/admin/remittance/' . (int) $record['id'] . '/delete') ?>" method="post" class="d-inline" onsubmit="return confirm('Delete this pending remittance queue item?');">
+                                        <?= csrf_field() ?>
+                                        <button type="submit" class="btn btn-sm btn-outline-danger">Delete</button>
+                                    </form>
                                 </td>
                             </tr>
                         <?php endforeach; ?>

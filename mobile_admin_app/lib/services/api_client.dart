@@ -32,7 +32,7 @@ class ApiClient {
   final http.Client _httpClient;
 
   Uri _uri(String path, [Map<String, String>? query]) {
-    final base = Uri.parse(AppConfig.apiBaseUrl);
+    final base = Uri.parse(AppConfig.resolvedApiBaseUrl);
     final basePath = base.path.endsWith('/') ? base.path.substring(0, base.path.length - 1) : base.path;
     final normalizedPath = '$basePath/$path';
     return base.replace(path: normalizedPath, queryParameters: query);
@@ -53,8 +53,26 @@ class ApiClient {
     if (session.role != 'admin') {
       throw ApiException('This mobile app is for admin accounts only.');
     }
+    if (session.forcePasswordChange) {
+      throw ApiException(
+        'Password change is required for this account. Use Forgot Password or the web Change Password page first.',
+      );
+    }
 
     return session;
+  }
+
+  Future<String> forgotPassword({
+    required String username,
+    required String recoveryKey,
+  }) async {
+    final json = await postPublic('forgot-password', <String, dynamic>{
+      'username': username,
+      'recovery_key': recoveryKey,
+    });
+
+    final data = (json['data'] as Map<String, dynamic>? ?? <String, dynamic>{});
+    return (data['temporary_password'] ?? '').toString();
   }
 
   Future<void> logout(String token) async {
@@ -103,9 +121,30 @@ class ApiClient {
     return (json['data'] as Map<String, dynamic>? ?? <String, dynamic>{});
   }
 
+  Future<Map<String, dynamic>> deletePendingRemittance(String token, int deliveryRecordId) async {
+    final json = await postAuthed('admin/remittances/$deliveryRecordId/delete', token);
+    return (json['data'] as Map<String, dynamic>? ?? <String, dynamic>{});
+  }
+
   Future<PaginatedResponse> fetchShortages(String token, {int page = 1}) async {
     final json = await getAuthed('admin/shortages', token, query: _pageQuery(page));
     return _paginated(json);
+  }
+
+  Future<Map<String, dynamic>> collectShortage(
+    String token,
+    int remittanceId, {
+    required String paymentDate,
+    required String amount,
+    String notes = '',
+  }) async {
+    final json = await postAuthed('admin/shortages/$remittanceId/collect', token, body: {
+      'payment_date': paymentDate,
+      'amount': amount,
+      'notes': notes,
+    });
+
+    return (json['data'] as Map<String, dynamic>? ?? <String, dynamic>{});
   }
 
   Future<PaginatedResponse> fetchPayrolls(String token, {int page = 1, String status = ''}) async {
@@ -116,6 +155,28 @@ class ApiClient {
 
     final json = await getAuthed('admin/payrolls', token, query: query);
     return _paginated(json);
+  }
+
+  Future<List<Map<String, dynamic>>> fetchRiders(String token) async {
+    final json = await getAuthed('admin/riders', token);
+    final data = (json['data'] as Map<String, dynamic>? ?? <String, dynamic>{});
+    return ((data['items'] as List<dynamic>? ?? <dynamic>[]))
+        .whereType<Map<String, dynamic>>()
+        .toList();
+  }
+
+  Future<Map<String, dynamic>> generatePayroll(
+    String token, {
+    required int riderId,
+    required String payrollMonth,
+    required String cutoffPeriod,
+  }) async {
+    final json = await postAuthed('admin/payrolls/generate', token, body: {
+      'rider_id': riderId,
+      'payroll_month': payrollMonth,
+      'cutoff_period': cutoffPeriod,
+    });
+    return (json['data'] as Map<String, dynamic>? ?? <String, dynamic>{});
   }
 
   Future<void> releasePayroll(
@@ -145,6 +206,8 @@ class ApiClient {
       throw ApiException('The server connection failed.');
     } on FormatException {
       throw ApiException('The server returned an invalid response.');
+    } on StateError catch (error) {
+      throw ApiException(error.message.toString());
     }
   }
 
@@ -166,6 +229,8 @@ class ApiClient {
       throw ApiException('The server connection failed.');
     } on FormatException {
       throw ApiException('The server returned an invalid response.');
+    } on StateError catch (error) {
+      throw ApiException(error.message.toString());
     }
   }
 
@@ -188,6 +253,8 @@ class ApiClient {
       throw ApiException('The server connection failed.');
     } on FormatException {
       throw ApiException('The server returned an invalid response.');
+    } on StateError catch (error) {
+      throw ApiException(error.message.toString());
     }
   }
 

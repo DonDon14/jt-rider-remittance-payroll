@@ -1694,6 +1694,66 @@ class AdminController extends BaseController
         return redirect()->to($target)->with('success', $message)->with('remittance_id', (int) ($updatedRemittance['id'] ?? $summary['id']));
     }
 
+    public function deletePendingRemittance(int $deliveryRecordId)
+    {
+        $deliveryModel = new DeliveryRecordModel();
+        $delivery = $deliveryModel->find($deliveryRecordId);
+        if (! $delivery) {
+            return redirect()->to('/admin/remittances')->with('error', 'Delivery record not found.');
+        }
+
+        if (! empty($delivery['payroll_id'])) {
+            return redirect()->to('/admin/remittances')->with('error', 'This delivery day is already locked into payroll and cannot be deleted.');
+        }
+
+        $remittance = (new RemittanceModel())->where('delivery_record_id', $deliveryRecordId)->first();
+        if ($remittance && ($remittance['variance_type'] ?? 'PENDING') !== 'PENDING') {
+            return redirect()->to('/admin/remittances')->with('error', 'Only pending remittance records can be deleted.');
+        }
+
+        $submissionModel = new DeliverySubmissionModel();
+        $submission = null;
+        if (! empty($delivery['source_submission_id'])) {
+            $submission = $submissionModel->find((int) $delivery['source_submission_id']);
+        }
+        if (! $submission) {
+            $submission = $submissionModel
+                ->where('processed_delivery_record_id', $deliveryRecordId)
+                ->where('status', 'APPROVED')
+                ->first();
+        }
+
+        $db = db_connect();
+        $db->transStart();
+
+        if ($submission && ($submission['status'] ?? '') === 'APPROVED') {
+            $submissionModel->update((int) $submission['id'], [
+                'status' => 'PENDING',
+                'processed_delivery_record_id' => null,
+            ]);
+        }
+
+        (new DeliveryAuditLogModel())->insert([
+            'delivery_record_id' => (int) $delivery['id'],
+            'delivery_submission_id' => $submission ? (int) $submission['id'] : null,
+            'rider_id' => (int) ($delivery['rider_id'] ?? 0),
+            'actor_user_id' => (int) session()->get('user_id'),
+            'actor_role' => 'admin',
+            'action' => 'PENDING_REMITTANCE_DELETED',
+            'notes' => 'Admin deleted pending remittance queue item.',
+            'created_at' => date('Y-m-d H:i:s'),
+        ]);
+
+        $deliveryModel->delete($deliveryRecordId);
+        $db->transComplete();
+
+        if (! $db->transStatus()) {
+            return redirect()->to('/admin/remittances')->with('error', 'Unable to delete the pending remittance.');
+        }
+
+        return redirect()->to('/admin/remittances')->with('success', 'Pending remittance deleted.');
+    }
+
     public function recordShortagePayment(int $remittanceId)
     {
         $remittance = (new RemittanceModel())->find($remittanceId);

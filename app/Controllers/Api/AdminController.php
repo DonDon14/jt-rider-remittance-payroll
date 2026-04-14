@@ -5,12 +5,27 @@ namespace App\Controllers\Api;
 use App\Models\DeliveryAuditLogModel;
 use App\Models\DeliveryRecordModel;
 use App\Models\DeliverySubmissionModel;
+use App\Models\PayrollAdjustmentModel;
 use App\Models\PayrollModel;
+use App\Models\RemittanceEntryModel;
 use App\Models\RemittanceModel;
+use App\Models\RiderModel;
 use App\Models\ShortagePaymentModel;
 
 class AdminController extends BaseApiController
 {
+    private array $denominations = [
+        'denom_025' => 0.25,
+        'denom_1' => 1,
+        'denom_5' => 5,
+        'denom_10' => 10,
+        'denom_20' => 20,
+        'denom_50' => 50,
+        'denom_100' => 100,
+        'denom_500' => 500,
+        'denom_1000' => 1000,
+    ];
+
     public function pendingSubmissions()
     {
         $user = $this->requireApiUser('admin');
@@ -458,6 +473,87 @@ class AdminController extends BaseApiController
             'entries' => array_map(fn (array $entry): array => $this->formatEntryRow($entry), $this->getRemittanceEntriesForSummary((int) ($updatedRemittance['id'] ?? $summary['id']))),
         ]);
     }
+
+    public function deletePendingRemittance(int $deliveryRecordId)
+    {
+        $user = $this->requireApiUser('admin');
+        if (! is_array($user)) {
+            return $user;
+        }
+
+        $deliveryModel = new DeliveryRecordModel();
+        $delivery = $deliveryModel->find($deliveryRecordId);
+        if (! $delivery) {
+            return $this->response->setStatusCode(404)->setJSON([
+                'status' => 'error',
+                'message' => 'Delivery record not found.',
+            ]);
+        }
+
+        if (! empty($delivery['payroll_id'])) {
+            return $this->response->setStatusCode(409)->setJSON([
+                'status' => 'error',
+                'message' => 'This delivery day is already locked into payroll and cannot be deleted.',
+            ]);
+        }
+
+        $remittance = (new RemittanceModel())->where('delivery_record_id', $deliveryRecordId)->first();
+        if ($remittance && ($remittance['variance_type'] ?? 'PENDING') !== 'PENDING') {
+            return $this->response->setStatusCode(409)->setJSON([
+                'status' => 'error',
+                'message' => 'Only pending remittance records can be deleted.',
+            ]);
+        }
+
+        $submissionModel = new DeliverySubmissionModel();
+        $submission = null;
+        if (! empty($delivery['source_submission_id'])) {
+            $submission = $submissionModel->find((int) $delivery['source_submission_id']);
+        }
+        if (! $submission) {
+            $submission = $submissionModel
+                ->where('processed_delivery_record_id', $deliveryRecordId)
+                ->where('status', 'APPROVED')
+                ->first();
+        }
+
+        $db = db_connect();
+        $db->transStart();
+
+        if ($submission && ($submission['status'] ?? '') === 'APPROVED') {
+            $submissionModel->update((int) $submission['id'], [
+                'status' => 'PENDING',
+                'processed_delivery_record_id' => null,
+            ]);
+        }
+
+        (new DeliveryAuditLogModel())->insert([
+            'delivery_record_id' => (int) $delivery['id'],
+            'delivery_submission_id' => $submission ? (int) $submission['id'] : null,
+            'rider_id' => (int) ($delivery['rider_id'] ?? 0),
+            'actor_user_id' => (int) $user['id'],
+            'actor_role' => 'admin',
+            'action' => 'PENDING_REMITTANCE_DELETED',
+            'notes' => 'Admin deleted pending remittance queue item via API.',
+            'created_at' => date('Y-m-d H:i:s'),
+        ]);
+
+        $deliveryModel->delete($deliveryRecordId);
+        $db->transComplete();
+
+        if (! $db->transStatus()) {
+            return $this->response->setStatusCode(500)->setJSON([
+                'status' => 'error',
+                'message' => 'Unable to delete the pending remittance.',
+            ]);
+        }
+
+        return $this->success([
+            'message' => 'Pending remittance deleted.',
+            'delivery_record_id' => $deliveryRecordId,
+        ]);
+    }
+
     public function shortages()
     {
         $user = $this->requireApiUser('admin');
@@ -508,6 +604,265 @@ class AdminController extends BaseApiController
         }, $shortages);
 
         return $this->successList($items, $pagination['page'], $pagination['per_page'], $total);
+    }
+
+    public function recordShortagePayment(int $remittanceId)
+    {
+        $user = $this->requireApiUser('admin');
+        if (! is_array($user)) {
+            return $user;
+        }
+
+        $remittance = (new RemittanceModel())->find($remittanceId);
+        if (! $remittance || ($remittance['variance_type'] ?? '') !== 'SHORT') {
+            return $this->response->setStatusCode(404)->setJSON([
+                'status' => 'error',
+                'message' => 'Shortage record not found.',
+            ]);
+        }
+
+        $payload = $this->request->getJSON(true);
+        if (! is_array($payload)) {
+            $payload = $this->request->getPost();
+        }
+
+        $rules = [
+            'payment_date' => 'required|valid_date[Y-m-d]',
+            'amount' => 'required|decimal|greater_than[0]',
+            'notes' => 'permit_empty|max_length[500]',
+        ];
+        if (! $this->validateData($payload, $rules)) {
+            return $this->failValidation($this->validator->getErrors());
+        }
+
+        $outstanding = $this->findShortageOutstandingBalance($remittanceId, (float) ($remittance['variance_amount'] ?? 0));
+        if ($outstanding === null) {
+            return $this->response->setStatusCode(500)->setJSON([
+                'status' => 'error',
+                'message' => 'Unable to load shortage balance.',
+            ]);
+        }
+
+        $amount = round((float) ($payload['amount'] ?? 0), 2);
+        if ($amount > $outstanding + 0.00001) {
+            return $this->response->setStatusCode(422)->setJSON([
+                'status' => 'error',
+                'message' => 'Payment exceeds the remaining shortage balance.',
+            ]);
+        }
+
+        (new ShortagePaymentModel())->insert([
+            'remittance_id' => $remittanceId,
+            'rider_id' => (int) ($remittance['rider_id'] ?? 0),
+            'payment_date' => (string) ($payload['payment_date'] ?? ''),
+            'amount' => $amount,
+            'notes' => trim((string) ($payload['notes'] ?? '')),
+        ]);
+
+        $remaining = $this->findShortageOutstandingBalance($remittanceId, (float) ($remittance['variance_amount'] ?? 0));
+
+        return $this->success([
+            'message' => 'Shortage payment recorded.',
+            'remittance_id' => $remittanceId,
+            'remaining_balance' => $remaining,
+            'shortage_status' => ($remaining ?? 0) > 0 ? 'OPEN' : 'SETTLED',
+        ]);
+    }
+
+    public function riders()
+    {
+        $user = $this->requireApiUser('admin');
+        if (! is_array($user)) {
+            return $user;
+        }
+
+        $rows = (new RiderModel())
+            ->where('is_active', 1)
+            ->orderBy('name', 'ASC')
+            ->findAll();
+
+        return $this->success([
+            'items' => array_map(static fn (array $row): array => [
+                'id' => (int) $row['id'],
+                'rider_code' => (string) ($row['rider_code'] ?? ''),
+                'name' => (string) ($row['name'] ?? ''),
+                'commission_rate' => round((float) ($row['commission_rate'] ?? 0), 2),
+            ], $rows),
+        ]);
+    }
+
+    public function generatePayroll()
+    {
+        $user = $this->requireApiUser('admin');
+        if (! is_array($user)) {
+            return $user;
+        }
+
+        $payload = $this->request->getJSON(true);
+        if (! is_array($payload)) {
+            $payload = $this->request->getPost();
+        }
+
+        $rules = [
+            'rider_id' => 'required|is_natural_no_zero',
+            'payroll_month' => 'required|regex_match[/^\d{4}\-\d{2}$/]',
+            'cutoff_period' => 'required|in_list[FIRST,SECOND]',
+        ];
+        if (! $this->validateData($payload, $rules)) {
+            return $this->failValidation($this->validator->getErrors());
+        }
+
+        $riderId = (int) ($payload['rider_id'] ?? 0);
+        $payrollMonth = (string) ($payload['payroll_month'] ?? '');
+        $cutoffPeriod = (string) ($payload['cutoff_period'] ?? '');
+        [$startDate, $endDate] = $this->getCutoffWindow($payrollMonth, $cutoffPeriod);
+
+        $rider = (new RiderModel())->find($riderId);
+        if (! $rider) {
+            return $this->response->setStatusCode(404)->setJSON([
+                'status' => 'error',
+                'message' => 'Rider not found.',
+            ]);
+        }
+
+        $payrollModel = new PayrollModel();
+        $duplicateRange = $payrollModel
+            ->where('rider_id', $riderId)
+            ->where('start_date', $startDate)
+            ->where('end_date', $endDate)
+            ->first();
+        if ($duplicateRange) {
+            return $this->response->setStatusCode(409)->setJSON([
+                'status' => 'error',
+                'message' => 'A payroll for this rider and date range already exists.',
+            ]);
+        }
+
+        $deliveryModel = new DeliveryRecordModel();
+        $deliveries = $deliveryModel
+            ->where('rider_id', $riderId)
+            ->where('delivery_date >=', $startDate)
+            ->where('delivery_date <=', $endDate)
+            ->where('payroll_id', null)
+            ->findAll();
+
+        $shortagePaymentModel = new ShortagePaymentModel();
+        $shortagePayments = $shortagePaymentModel
+            ->where('rider_id', $riderId)
+            ->where('payment_date >=', $startDate)
+            ->where('payment_date <=', $endDate)
+            ->where('payroll_id', null)
+            ->findAll();
+
+        $adjustmentModel = new PayrollAdjustmentModel();
+        $adjustments = $adjustmentModel
+            ->where('rider_id', $riderId)
+            ->where('adjustment_date >=', $startDate)
+            ->where('adjustment_date <=', $endDate)
+            ->where('payroll_id', null)
+            ->findAll();
+
+        if ($deliveries === [] && $shortagePayments === [] && $adjustments === []) {
+            return $this->response->setStatusCode(422)->setJSON([
+                'status' => 'error',
+                'message' => 'No unpaid delivery days, shortage repayments, or payroll adjustments were found in that date range.',
+            ]);
+        }
+
+        $deliveryIds = array_map(static fn (array $delivery): int => (int) $delivery['id'], $deliveries);
+        $remittances = $deliveryIds === []
+            ? []
+            : (new RemittanceModel())->whereIn('delivery_record_id', $deliveryIds)->findAll();
+
+        $totalSuccessful = array_sum(array_column($deliveries, 'successful_deliveries'));
+        $grossEarnings = round(array_sum(array_column($deliveries, 'total_due')), 2);
+        $totalDue = round(array_sum(array_column($deliveries, 'total_due')), 2);
+        $totalRemitted = round(array_sum(array_map(static fn (array $remittance): float => (float) ($remittance['total_remitted'] ?? 0), $remittances)), 2);
+        $totalExpectedRemittance = round(array_sum(array_map(static fn (array $delivery): float => (float) ($delivery['expected_remittance'] ?? 0), $deliveries)), 2);
+        $varianceNet = round($totalRemitted - $totalExpectedRemittance, 2);
+        $shortageDeductions = round(array_sum(array_map(
+            static fn (array $remittance): float => ($remittance['variance_type'] ?? '') === 'SHORT' ? (float) ($remittance['variance_amount'] ?? 0) : 0.0,
+            $remittances
+        )), 2);
+        $shortagePaymentsReceived = round(array_sum(array_column($shortagePayments, 'amount')), 2);
+        $bonusTotal = round(array_sum(array_map(
+            static fn (array $adjustment): float => ($adjustment['type'] ?? '') === 'BONUS' ? (float) ($adjustment['amount'] ?? 0) : 0.0,
+            $adjustments
+        )), 2);
+        $deductionTotal = round(array_sum(array_map(
+            static fn (array $adjustment): float => ($adjustment['type'] ?? '') === 'DEDUCTION' ? (float) ($adjustment['amount'] ?? 0) : 0.0,
+            $adjustments
+        )), 2);
+        $outstandingBalance = $this->calculateOutstandingShortageBalance($riderId, $endDate);
+        $netPay = round(
+            $grossEarnings
+            - $shortageDeductions
+            + $shortagePaymentsReceived,
+            2
+        );
+        $netPay = round($netPay + $bonusTotal - $deductionTotal, 2);
+
+        $data = [
+            'rider_id' => $riderId,
+            'month_year' => $startDate,
+            'start_date' => $startDate,
+            'end_date' => $endDate,
+            'total_successful' => $totalSuccessful,
+            'gross_earnings' => $grossEarnings,
+            'total_due' => $totalDue,
+            'total_remitted' => $totalRemitted,
+            'remittance_variance' => $varianceNet,
+            'shortage_deductions' => $shortageDeductions,
+            'shortage_payments_received' => $shortagePaymentsReceived,
+            'bonus_total' => $bonusTotal,
+            'deduction_total' => $deductionTotal,
+            'outstanding_shortage_balance' => $outstandingBalance,
+            'net_pay' => $netPay,
+            'payroll_status' => 'GENERATED',
+        ];
+
+        $db = db_connect();
+        $db->transStart();
+        $payrollId = (int) $payrollModel->insert($data);
+
+        if ($deliveryIds !== []) {
+            $deliveryModel->whereIn('id', $deliveryIds)->set(['payroll_id' => $payrollId])->update();
+        }
+
+        $paymentIds = array_map(static fn (array $payment): int => (int) $payment['id'], $shortagePayments);
+        if ($paymentIds !== []) {
+            $shortagePaymentModel->whereIn('id', $paymentIds)->set(['payroll_id' => $payrollId])->update();
+        }
+
+        $adjustmentIds = array_map(static fn (array $adjustment): int => (int) $adjustment['id'], $adjustments);
+        if ($adjustmentIds !== []) {
+            $adjustmentModel->whereIn('id', $adjustmentIds)->set(['payroll_id' => $payrollId])->update();
+        }
+        $db->transComplete();
+
+        if (! $db->transStatus()) {
+            return $this->response->setStatusCode(500)->setJSON([
+                'status' => 'error',
+                'message' => 'Unable to generate payroll for the selected cutoff.',
+            ]);
+        }
+
+        return $this->success([
+            'message' => 'Payroll generated for ' . $rider['name'] . ' covering ' . $startDate . ' to ' . $endDate . '.',
+            'payroll' => [
+                'id' => $payrollId,
+                'rider_id' => $riderId,
+                'start_date' => $startDate,
+                'end_date' => $endDate,
+                'net_pay' => $netPay,
+                'gross_earnings' => $grossEarnings,
+                'shortage_deductions' => $shortageDeductions,
+                'shortage_payments_received' => $shortagePaymentsReceived,
+                'bonus_total' => $bonusTotal,
+                'deduction_total' => $deductionTotal,
+                'payroll_status' => 'GENERATED',
+            ],
+        ]);
     }
 
     public function payrolls()
@@ -770,6 +1125,58 @@ class AdminController extends BaseApiController
         }
 
         return $number !== '' ? $name . ' (' . $number . ')' : $name;
+    }
+
+    private function findShortageOutstandingBalance(int $remittanceId, float $varianceAmount): ?float
+    {
+        $paidTotal = (new ShortagePaymentModel())
+            ->selectSum('amount')
+            ->where('remittance_id', $remittanceId)
+            ->first();
+
+        if (! is_array($paidTotal)) {
+            return null;
+        }
+
+        $paid = round((float) ($paidTotal['amount'] ?? 0), 2);
+
+        return max(0.0, round($varianceAmount - $paid, 2));
+    }
+
+    private function getCutoffWindow(string $payrollMonth, string $cutoffPeriod): array
+    {
+        $monthStart = $payrollMonth . '-01';
+        $monthEnd = date('Y-m-t', strtotime($monthStart));
+        $cutoff = strtoupper($cutoffPeriod) === 'SECOND' ? 'SECOND' : 'FIRST';
+
+        if ($cutoff === 'FIRST') {
+            return [$monthStart, $payrollMonth . '-15'];
+        }
+
+        return [$payrollMonth . '-16', $monthEnd];
+    }
+
+    private function calculateOutstandingShortageBalance(int $riderId, string $asOfDate): float
+    {
+        $shortageRemittances = (new RemittanceModel())
+            ->where('rider_id', $riderId)
+            ->where('variance_type', 'SHORT')
+            ->findAll();
+
+        $outstandingShortageBalance = 0.0;
+
+        foreach ($shortageRemittances as $remittance) {
+            $shortageAmount = round((float) ($remittance['variance_amount'] ?? 0), 2);
+            $paidUntilDate = (float) ((new ShortagePaymentModel())
+                ->selectSum('amount')
+                ->where('remittance_id', (int) $remittance['id'])
+                ->where('payment_date <=', $asOfDate)
+                ->first()['amount'] ?? 0);
+
+            $outstandingShortageBalance += max(0, round($shortageAmount - $paidUntilDate, 2));
+        }
+
+        return round($outstandingShortageBalance, 2);
     }
 }
 
