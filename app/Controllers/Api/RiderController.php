@@ -6,10 +6,12 @@ use App\Models\AnnouncementModel;
 use App\Models\DeliveryAuditLogModel;
 use App\Models\DeliveryRecordModel;
 use App\Models\DeliverySubmissionModel;
+use App\Models\PayrollAdjustmentModel;
 use App\Models\PayrollModel;
 use App\Models\RemittanceAccountModel;
 use App\Models\RemittanceModel;
 use App\Models\ShortagePaymentModel;
+use Dompdf\Dompdf;
 
 class RiderController extends BaseApiController
 {
@@ -473,6 +475,55 @@ class RiderController extends BaseApiController
         ]);
     }
 
+    public function payrollPdf(int $payrollId)
+    {
+        try {
+            $user = $this->requireApiUser('rider');
+            if (! is_array($user)) {
+                return $user;
+            }
+
+            $rider = $user['resolved_rider'] ?? null;
+            if (! $rider) {
+                return $this->failUnauthorized('Rider profile not found.');
+            }
+
+            // Keep lookup deterministic and avoid SQL join mismatches in production.
+            $payroll = (new PayrollModel())->find($payrollId);
+            if (! $payroll || (int) ($payroll['rider_id'] ?? 0) !== (int) $rider['id']) {
+                return $this->response->setStatusCode(404)->setJSON([
+                    'status' => 'error',
+                    'message' => 'Payslip not found.',
+                ]);
+            }
+
+            $payroll['name'] = (string) ($rider['name'] ?? '');
+            $payroll['rider_code'] = (string) ($rider['rider_code'] ?? '');
+            $payroll['commission_rate'] = round((float) ($rider['commission_rate'] ?? 0), 2);
+
+            $html = view('pdf/payroll_payslip', [
+                'payroll' => $payroll,
+                'adjustments' => (new PayrollAdjustmentModel())
+                    ->where('payroll_id', $payrollId)
+                    ->orderBy('type', 'ASC')
+                    ->orderBy('description', 'ASC')
+                    ->findAll(),
+            ]);
+
+            return $this->renderPdf($html, 'payroll-payslip-' . $payroll['rider_code'] . '-' . ($payroll['start_date'] ?? $payroll['month_year']) . '.pdf');
+        } catch (\Throwable $exception) {
+            log_message('error', 'API rider payrollPdf failure for payrollId {id}: {message}', [
+                'id' => $payrollId,
+                'message' => $exception->getMessage(),
+            ]);
+
+            return $this->response->setStatusCode(500)->setJSON([
+                'status' => 'error',
+                'message' => 'Unable to generate payslip right now.',
+            ]);
+        }
+    }
+
     private function buildPaydayPreview(string $month): array
     {
         $today = date('Y-m-d');
@@ -512,6 +563,22 @@ class RiderController extends BaseApiController
             'effective_end_date' => min($today, $monthEnd),
             'payout_date' => date('Y-m-05', strtotime($monthStart . ' +1 month')),
         ];
+    }
+
+    private function renderPdf(string $html, string $filename)
+    {
+        $dompdf = new Dompdf([
+            'isRemoteEnabled' => true,
+        ]);
+
+        $dompdf->loadHtml($html);
+        $dompdf->setPaper('A4', 'portrait');
+        $dompdf->render();
+
+        return $this->response
+            ->setHeader('Content-Type', 'application/pdf')
+            ->setHeader('Content-Disposition', 'attachment; filename="' . $filename . '"')
+            ->setBody($dompdf->output());
     }
 }
 
