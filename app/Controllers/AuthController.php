@@ -42,6 +42,10 @@ class AuthController extends BaseController
         $password = (string) $this->request->getPost('password');
         $lockRemainingSeconds = $this->remainingLoginLockSeconds($username);
         if ($lockRemainingSeconds > 0) {
+            $this->logAuthSecurityEvent('warning', 'web_login_locked', $username, [
+                'retry_after_seconds' => $lockRemainingSeconds,
+            ]);
+
             return redirect()->back()->withInput()->with('error', 'Too many failed login attempts. Please try again later.');
         }
 
@@ -49,10 +53,15 @@ class AuthController extends BaseController
         $user = $userModel->where('username', $username)->first();
         if (! $user || ! (bool) ($user['is_active'] ?? true) || ! password_verify($password, (string) $user['password_hash'])) {
             $this->recordFailedLoginAttempt($username);
+            $this->logAuthSecurityEvent('warning', 'web_login_failed', $username);
 
             return redirect()->back()->withInput()->with('error', 'Invalid username or password.');
         }
         $this->clearFailedLoginAttempts($username);
+        $this->logAuthSecurityEvent('info', 'web_login_success', $username, [
+            'user_id' => (int) $user['id'],
+            'role' => (string) ($user['role'] ?? ''),
+        ]);
 
         $resolvedRiderId = $this->resolveRiderId($user);
         if (($user['role'] ?? '') === 'rider' && $resolvedRiderId === null) {
@@ -172,10 +181,16 @@ class AuthController extends BaseController
         $userModel = new UserModel();
         $user = $userModel->where('username', $username)->first();
         if (! $user || ! (bool) ($user['is_active'] ?? true)) {
+            $this->logAuthSecurityEvent('warning', 'web_forgot_password_user_not_found', $username);
+
             return redirect()->back()->withInput()->with('error', 'Account not found or inactive.');
         }
 
         if (! $this->isSelfServiceForgotPasswordEnabled() && ($user['role'] ?? '') !== 'admin') {
+            $this->logAuthSecurityEvent('warning', 'web_forgot_password_blocked_mode', $username, [
+                'role' => (string) ($user['role'] ?? ''),
+            ]);
+
             return redirect()->back()->withInput()->with('error', 'Self-service reset is disabled. Contact admin for password reset.');
         }
 
@@ -188,6 +203,10 @@ class AuthController extends BaseController
             $savedRiderCode = strtolower(trim((string) ($rider['rider_code'] ?? '')));
             $savedContactNumber = preg_replace('/\D+/', '', (string) ($rider['contact_number'] ?? '')) ?? '';
             if ($riderCode === '' || $contactNumber === '' || $riderCode !== $savedRiderCode || $contactNumber !== $savedContactNumber) {
+                $this->logAuthSecurityEvent('warning', 'web_forgot_password_rider_verification_failed', $username, [
+                    'role' => 'rider',
+                ]);
+
                 return redirect()->back()->withInput()->with('error', 'Rider verification failed. Check rider code and contact number.');
             }
         } else {
@@ -196,6 +215,10 @@ class AuthController extends BaseController
                 return redirect()->back()->withInput()->with('error', 'Admin recovery is not configured. Set auth.adminRecoveryKey in environment.');
             }
             if ($recoveryKey === '' || ! hash_equals($adminRecoveryKey, $recoveryKey)) {
+                $this->logAuthSecurityEvent('warning', 'web_forgot_password_admin_recovery_failed', $username, [
+                    'role' => 'admin',
+                ]);
+
                 return redirect()->back()->withInput()->with('error', 'Admin recovery key is invalid.');
             }
         }
@@ -206,6 +229,10 @@ class AuthController extends BaseController
             'force_password_change' => 1,
         ]);
         (new ApiTokenModel())->where('user_id', (int) $user['id'])->delete();
+        $this->logAuthSecurityEvent('warning', 'web_forgot_password_reset_issued', $username, [
+            'user_id' => (int) $user['id'],
+            'role' => (string) ($user['role'] ?? ''),
+        ]);
 
         if ($this->shouldExposeTemporaryPassword()) {
             return redirect()->to('/login')->with('success', 'Temporary password issued: ' . $temporaryPassword . '. Change it immediately after login.');
@@ -337,5 +364,18 @@ class AuthController extends BaseController
         $mode = strtolower(trim((string) env('auth.forgotPasswordMode', ENVIRONMENT === 'production' ? 'admin_only' : 'self_service')));
 
         return $mode === 'self_service';
+    }
+
+    private function logAuthSecurityEvent(string $level, string $event, string $username, array $extra = []): void
+    {
+        $context = array_merge([
+            'event' => $event,
+            'username' => strtolower(trim($username)),
+            'ip' => (string) $this->request->getIPAddress(),
+            'user_agent' => substr((string) $this->request->getUserAgent()->getAgentString(), 0, 255),
+            'channel' => 'web',
+        ], $extra);
+
+        log_message($level, 'Auth security event: {event}', $context);
     }
 }

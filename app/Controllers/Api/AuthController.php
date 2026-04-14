@@ -8,7 +8,7 @@ use App\Models\UserModel;
 
 class AuthController extends BaseApiController
 {
-    private const DEFAULT_TOKEN_TTL_HOURS = 168;
+    private const DEFAULT_TOKEN_TTL_HOURS = 72;
     private const ADMIN_RECOVERY_KEY_ENV = 'auth.adminRecoveryKey';
     private const DEFAULT_LOGIN_MAX_ATTEMPTS = 5;
     private const DEFAULT_LOGIN_LOCK_SECONDS = 900;
@@ -40,6 +40,10 @@ class AuthController extends BaseApiController
         $deviceName = trim((string) ($payload['device_name'] ?? 'mobile'));
         $lockRemainingSeconds = $this->remainingLoginLockSeconds($username);
         if ($lockRemainingSeconds > 0) {
+            $this->logAuthSecurityEvent('warning', 'api_login_locked', $username, [
+                'retry_after_seconds' => $lockRemainingSeconds,
+            ]);
+
             return $this->response->setStatusCode(429)->setJSON([
                 'status' => 'error',
                 'message' => 'Too many failed login attempts. Try again later.',
@@ -51,6 +55,7 @@ class AuthController extends BaseApiController
         $user = $userModel->where('username', $username)->first();
         if (! $user || ! (bool) ($user['is_active'] ?? true) || ! password_verify($password, (string) $user['password_hash'])) {
             $this->recordFailedLoginAttempt($username);
+            $this->logAuthSecurityEvent('warning', 'api_login_failed', $username);
 
             return $this->response->setStatusCode(401)->setJSON([
                 'status' => 'error',
@@ -86,6 +91,10 @@ class AuthController extends BaseApiController
             'token_hash' => hash('sha256', $plainToken),
             'token_name' => $deviceName !== '' ? $deviceName : 'mobile',
             'expires_at' => $expiresAt,
+        ]);
+        $this->logAuthSecurityEvent('info', 'api_login_success', $username, [
+            'user_id' => (int) $user['id'],
+            'role' => (string) ($user['role'] ?? ''),
         ]);
 
         return $this->success([
@@ -172,6 +181,8 @@ class AuthController extends BaseApiController
         $userModel = new UserModel();
         $user = $userModel->where('username', $username)->first();
         if (! $user || ! (bool) ($user['is_active'] ?? true)) {
+            $this->logAuthSecurityEvent('warning', 'api_forgot_password_user_not_found', $username);
+
             return $this->response->setStatusCode(404)->setJSON([
                 'status' => 'error',
                 'message' => 'Account not found or inactive.',
@@ -179,6 +190,10 @@ class AuthController extends BaseApiController
         }
 
         if (! $this->isSelfServiceForgotPasswordEnabled() && ($user['role'] ?? '') !== 'admin') {
+            $this->logAuthSecurityEvent('warning', 'api_forgot_password_blocked_mode', $username, [
+                'role' => (string) ($user['role'] ?? ''),
+            ]);
+
             return $this->response->setStatusCode(403)->setJSON([
                 'status' => 'error',
                 'message' => 'Self-service reset is disabled. Contact admin for password reset.',
@@ -197,6 +212,10 @@ class AuthController extends BaseApiController
             $savedRiderCode = strtolower(trim((string) ($rider['rider_code'] ?? '')));
             $savedContactNumber = preg_replace('/\D+/', '', (string) ($rider['contact_number'] ?? '')) ?? '';
             if ($riderCode === '' || $contactNumber === '' || $riderCode !== $savedRiderCode || $contactNumber !== $savedContactNumber) {
+                $this->logAuthSecurityEvent('warning', 'api_forgot_password_rider_verification_failed', $username, [
+                    'role' => 'rider',
+                ]);
+
                 return $this->response->setStatusCode(422)->setJSON([
                     'status' => 'error',
                     'message' => 'Rider verification failed. Check rider code and contact number.',
@@ -211,6 +230,10 @@ class AuthController extends BaseApiController
                 ]);
             }
             if ($recoveryKey === '' || ! hash_equals($adminRecoveryKey, $recoveryKey)) {
+                $this->logAuthSecurityEvent('warning', 'api_forgot_password_admin_recovery_failed', $username, [
+                    'role' => 'admin',
+                ]);
+
                 return $this->response->setStatusCode(422)->setJSON([
                     'status' => 'error',
                     'message' => 'Admin recovery key is invalid.',
@@ -224,6 +247,10 @@ class AuthController extends BaseApiController
             'force_password_change' => 1,
         ]);
         (new ApiTokenModel())->where('user_id', (int) $user['id'])->delete();
+        $this->logAuthSecurityEvent('warning', 'api_forgot_password_reset_issued', $username, [
+            'user_id' => (int) $user['id'],
+            'role' => (string) ($user['role'] ?? ''),
+        ]);
 
         $responseData = [
             'message' => 'Temporary password issued. Change it immediately after login.',
@@ -317,6 +344,19 @@ class AuthController extends BaseApiController
         $mode = strtolower(trim((string) env('auth.forgotPasswordMode', ENVIRONMENT === 'production' ? 'admin_only' : 'self_service')));
 
         return $mode === 'self_service';
+    }
+
+    private function logAuthSecurityEvent(string $level, string $event, string $username, array $extra = []): void
+    {
+        $context = array_merge([
+            'event' => $event,
+            'username' => strtolower(trim($username)),
+            'ip' => (string) $this->request->getIPAddress(),
+            'user_agent' => substr((string) $this->request->getUserAgent()->getAgentString(), 0, 255),
+            'channel' => 'api',
+        ], $extra);
+
+        log_message($level, 'Auth security event: {event}', $context);
     }
 
     private function resolveRiderForUser(array $user): ?array
