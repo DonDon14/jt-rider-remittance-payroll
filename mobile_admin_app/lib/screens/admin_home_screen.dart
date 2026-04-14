@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../controllers/session_controller.dart';
 import '../services/api_client.dart';
+import '../utils/backup_saver.dart';
 
 class AdminHomeScreen extends StatefulWidget {
   const AdminHomeScreen({
@@ -20,6 +21,7 @@ class AdminHomeScreen extends StatefulWidget {
 class _AdminHomeScreenState extends State<AdminHomeScreen> {
   bool _isLoading = true;
   bool _isLoggingOut = false;
+  bool _isDownloadingBackup = false;
   String? _error;
 
   List<Map<String, dynamic>> _pendingSubmissions = const [];
@@ -824,6 +826,35 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
     }
   }
 
+  Future<void> _downloadManualBackup() async {
+    if (_isDownloadingBackup) {
+      return;
+    }
+
+    setState(() {
+      _isDownloadingBackup = true;
+    });
+
+    try {
+      final file = await widget.apiClient.downloadManualBackup(_token);
+      final message = await saveBackupFile(
+        bytes: file.bytes,
+        fileName: file.fileName,
+      );
+      _showMessage(message);
+    } on ApiException catch (error) {
+      _showMessage(error.message, isError: true);
+    } catch (error) {
+      _showMessage('Unable to save backup file: ${error.toString()}', isError: true);
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isDownloadingBackup = false;
+        });
+      }
+    }
+  }
+
   void _showMessage(String message, {bool isError = false}) {
     if (!mounted) {
       return;
@@ -1254,12 +1285,54 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
     );
   }
 
+  Widget _buildSettingsTab() {
+    return RefreshIndicator(
+      onRefresh: _loadAll,
+      child: ListView(
+        padding: const EdgeInsets.all(16),
+        children: [
+          Card(
+            child: Padding(
+              padding: const EdgeInsets.all(16),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'Manual Backup',
+                    style: Theme.of(context).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w700),
+                  ),
+                  const SizedBox(height: 8),
+                  const Text(
+                    'Generate a full SQL backup from the server. '
+                    'Use this before end-of-day sign-off when you are not using automated VPS backups.',
+                  ),
+                  const SizedBox(height: 14),
+                  FilledButton.icon(
+                    onPressed: _isDownloadingBackup ? null : _downloadManualBackup,
+                    icon: _isDownloadingBackup
+                        ? const SizedBox(
+                            width: 16,
+                            height: 16,
+                            child: CircularProgressIndicator(strokeWidth: 2),
+                          )
+                        : const Icon(Icons.download_rounded),
+                    label: Text(_isDownloadingBackup ? 'Preparing backup...' : 'Download SQL Backup'),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final session = widget.sessionController.session;
 
     return DefaultTabController(
-      length: 4,
+      length: 5,
       child: Scaffold(
         appBar: AppBar(
           title: Column(
@@ -1296,6 +1369,7 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
               Tab(text: 'Remittances'),
               Tab(text: 'Shortages'),
               Tab(text: 'Payrolls'),
+              Tab(text: 'Settings'),
             ],
           ),
         ),
@@ -1324,6 +1398,7 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
                       _buildRemittancesTab(),
                       _buildShortagesTab(),
                       _buildPayrollsTab(),
+                      _buildSettingsTab(),
                     ],
                   ),
       ),

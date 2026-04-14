@@ -9,6 +9,21 @@
 </div>
 
 <div class="row g-3 mb-3">
+    <div class="col-12">
+        <div class="card">
+            <div class="card-header fw-semibold">Manual Backup</div>
+            <div class="card-body d-flex flex-column flex-lg-row align-items-lg-center justify-content-between gap-3">
+                <div>
+                    <p class="mb-1">Generate and download a full SQL backup on demand.</p>
+                    <p class="text-muted mb-0">Use this at the end of the day if you do not want paid automated backups yet.</p>
+                </div>
+                <form method="post" action="<?= site_url('/admin/settings/backup') ?>">
+                    <?= csrf_field() ?>
+                    <button class="btn btn-dark">Download SQL Backup</button>
+                </form>
+            </div>
+        </div>
+    </div>
     <div class="col-lg-5">
         <div class="card h-100">
             <div class="card-header fw-semibold">Add Remittance Account</div>

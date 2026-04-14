@@ -26,6 +26,18 @@ class PaginatedResponse {
   final Map<String, dynamic> meta;
 }
 
+class DownloadedFile {
+  const DownloadedFile({
+    required this.bytes,
+    required this.fileName,
+    required this.contentType,
+  });
+
+  final List<int> bytes;
+  final String fileName;
+  final String contentType;
+}
+
 class ApiClient {
   ApiClient({http.Client? httpClient}) : _httpClient = httpClient ?? http.Client();
 
@@ -191,6 +203,46 @@ class ApiClient {
     });
   }
 
+  Future<DownloadedFile> downloadManualBackup(String token) async {
+    try {
+      final response = await _httpClient.post(
+        _uri('admin/system/backup'),
+        headers: _headers(token),
+        body: jsonEncode(<String, dynamic>{}),
+      );
+
+      if (response.statusCode >= 400) {
+        final message = _decodeErrorMessage(response);
+        throw ApiException(message, statusCode: response.statusCode);
+      }
+
+      final bytes = response.bodyBytes;
+      if (bytes.isEmpty) {
+        throw ApiException('Backup download returned an empty file.', statusCode: response.statusCode);
+      }
+
+      final contentType = response.headers['content-type'] ?? 'application/sql';
+      final fileName = _extractFileName(
+        response.headers['content-disposition'],
+        fallback: 'jt-backup-${DateTime.now().millisecondsSinceEpoch}.sql',
+      );
+
+      return DownloadedFile(
+        bytes: bytes,
+        fileName: fileName,
+        contentType: contentType,
+      );
+    } on SocketException {
+      throw ApiException('Unable to reach the server. Check the backend URL and your network connection.');
+    } on HttpException {
+      throw ApiException('The server connection failed.');
+    } on FormatException {
+      throw ApiException('The server returned an invalid response.');
+    } on StateError catch (error) {
+      throw ApiException(error.message.toString());
+    }
+  }
+
   Future<Map<String, dynamic>> postPublic(String path, Map<String, dynamic> body) async {
     try {
       final response = await _httpClient.post(
@@ -301,5 +353,50 @@ class ApiClient {
     }
 
     return json;
+  }
+
+  String _decodeErrorMessage(http.Response response) {
+    final body = response.body.trim();
+    if (body.isEmpty) {
+      return 'Request failed.';
+    }
+
+    try {
+      final json = jsonDecode(body) as Map<String, dynamic>;
+      if (json['message'] != null) {
+        return json['message'].toString();
+      }
+      if (json['errors'] is Map && (json['errors'] as Map).isNotEmpty) {
+        return (json['errors'] as Map).values.first.toString();
+      }
+    } catch (_) {
+      return 'Request failed.';
+    }
+
+    return 'Request failed.';
+  }
+
+  String _extractFileName(String? disposition, {required String fallback}) {
+    if (disposition == null || disposition.trim().isEmpty) {
+      return fallback;
+    }
+
+    final utf8Match = RegExp(r"filename\*=UTF-8''([^;]+)", caseSensitive: false).firstMatch(disposition);
+    if (utf8Match != null) {
+      final raw = utf8Match.group(1) ?? '';
+      if (raw.isNotEmpty) {
+        return Uri.decodeComponent(raw).replaceAll('"', '');
+      }
+    }
+
+    final plainMatch = RegExp(r'filename="?([^";]+)"?', caseSensitive: false).firstMatch(disposition);
+    if (plainMatch != null) {
+      final raw = plainMatch.group(1) ?? '';
+      if (raw.isNotEmpty) {
+        return raw.trim();
+      }
+    }
+
+    return fallback;
   }
 }

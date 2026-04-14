@@ -1203,6 +1203,18 @@ class AdminController extends BaseController
         return redirect()->to('/admin/settings')->with('success', 'Remittance account updated.');
     }
 
+    public function downloadManualBackup()
+    {
+        $result = $this->createDatabaseBackupFile();
+        if (! $result['ok']) {
+            return redirect()->to('/admin/settings')->with('error', (string) $result['error']);
+        }
+
+        return $this->response
+            ->download((string) $result['path'], null)
+            ->setFileName((string) $result['file_name']);
+    }
+
     public function storeDelivery()
     {
         $rules = [
@@ -2980,6 +2992,114 @@ class AdminController extends BaseController
         $value = trim((string) $this->request->getPost($field));
 
         return $value !== '' ? $value : null;
+    }
+
+    private function createDatabaseBackupFile(): array
+    {
+        if (! function_exists('exec')) {
+            return [
+                'ok' => false,
+                'error' => 'Server backup command is unavailable (exec is disabled).',
+            ];
+        }
+
+        $dbConfig = (array) (config('Database')->default ?? []);
+        $host = trim((string) ($dbConfig['hostname'] ?? '127.0.0.1'));
+        $port = (int) ($dbConfig['port'] ?? 3306);
+        $database = trim((string) ($dbConfig['database'] ?? ''));
+        $username = trim((string) ($dbConfig['username'] ?? ''));
+        $password = (string) ($dbConfig['password'] ?? '');
+
+        if ($database === '' || $username === '') {
+            return [
+                'ok' => false,
+                'error' => 'Database credentials are incomplete. Check .env database settings.',
+            ];
+        }
+
+        $backupDir = WRITEPATH . 'backups';
+        if (! is_dir($backupDir) && ! @mkdir($backupDir, 0775, true) && ! is_dir($backupDir)) {
+            return [
+                'ok' => false,
+                'error' => 'Unable to create backup directory: ' . $backupDir,
+            ];
+        }
+
+        $fileName = 'jt-backup-' . date('Ymd-His') . '.sql';
+        $filePath = rtrim($backupDir, DIRECTORY_SEPARATOR) . DIRECTORY_SEPARATOR . $fileName;
+        $errorPath = tempnam(sys_get_temp_dir(), 'jt_backup_err_');
+        if ($errorPath === false) {
+            return [
+                'ok' => false,
+                'error' => 'Unable to allocate backup error log file.',
+            ];
+        }
+
+        $mysqldumpBinary = trim((string) @shell_exec('command -v mysqldump 2>/dev/null'));
+        if ($mysqldumpBinary === '') {
+            $mysqldumpBinary = 'mysqldump';
+        }
+
+        $command = [
+            escapeshellcmd($mysqldumpBinary),
+            '--single-transaction',
+            '--quick',
+            '--skip-lock-tables',
+            '--default-character-set=utf8mb4',
+            '-h ' . escapeshellarg($host),
+            '-P ' . $port,
+            '-u ' . escapeshellarg($username),
+        ];
+        $command[] = $password !== '' ? '-p' . escapeshellarg($password) : '--skip-password';
+        $command[] = escapeshellarg($database);
+
+        $fullCommand = implode(' ', $command)
+            . ' > ' . escapeshellarg($filePath)
+            . ' 2> ' . escapeshellarg($errorPath);
+
+        $output = [];
+        $exitCode = 1;
+        @exec($fullCommand, $output, $exitCode);
+
+        $errorOutput = trim((string) @file_get_contents($errorPath));
+        @unlink($errorPath);
+
+        if ($exitCode !== 0 || ! is_file($filePath) || filesize($filePath) === 0) {
+            if (is_file($filePath)) {
+                @unlink($filePath);
+            }
+
+            return [
+                'ok' => false,
+                'error' => 'Backup failed. ' . ($errorOutput !== '' ? $errorOutput : 'mysqldump returned an error.'),
+            ];
+        }
+
+        $this->pruneBackupFiles($backupDir, 30);
+
+        return [
+            'ok' => true,
+            'path' => $filePath,
+            'file_name' => $fileName,
+        ];
+    }
+
+    private function pruneBackupFiles(string $backupDir, int $keepLatest = 30): void
+    {
+        $files = glob(rtrim($backupDir, DIRECTORY_SEPARATOR) . DIRECTORY_SEPARATOR . 'jt-backup-*.sql');
+        if (! is_array($files) || count($files) <= $keepLatest) {
+            return;
+        }
+
+        usort($files, static function (string $a, string $b): int {
+            return filemtime($b) <=> filemtime($a);
+        });
+
+        foreach (array_slice($files, $keepLatest) as $oldFile) {
+            if (is_file($oldFile)) {
+                @unlink($oldFile);
+            }
+        }
     }
 
     private function storeRiderProfilePhoto(string $field, ?string $existingPath = null)

@@ -54,6 +54,7 @@ $routes->group('admin', ['filter' => 'admin'], static function ($routes) {
     $routes->post('settings/commission', 'AdminController::storeCommissionRate');
     $routes->post('settings/remittance-accounts', 'AdminController::storeRemittanceAccount');
     $routes->post('settings/remittance-accounts/(:num)', 'AdminController::updateRemittanceAccount/$1');
+    $routes->post('settings/backup', 'AdminController::downloadManualBackup');
     $routes->post('deliveries', 'AdminController::storeDelivery');
     $routes->post('delivery-submissions/(:num)/approve', 'AdminController::approveDeliverySubmission/$1');
     $routes->post('delivery-submissions/(:num)/reject', 'AdminController::rejectDeliverySubmission/$1');
@@ -94,6 +95,7 @@ $routes->group('api', static function ($routes) {
     $routes->get('admin/payrolls', 'Api\AdminController::payrolls');
     $routes->post('admin/payrolls/generate', 'Api\AdminController::generatePayroll');
     $routes->post('admin/payrolls/(:num)/release', 'Api\AdminController::releasePayroll/$1');
+    $routes->post('admin/system/backup', 'Api\AdminController::downloadManualBackup');
     $routes->get('rider/profile', 'Api\RiderController::profile');
     $routes->get('rider/dashboard', 'Api\RiderController::dashboard');
     $routes->get('rider/payrolls', 'Api\RiderController::payrolls');
