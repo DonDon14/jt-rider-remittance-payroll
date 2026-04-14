@@ -10,6 +10,8 @@ class AuthController extends BaseApiController
 {
     private const DEFAULT_TOKEN_TTL_HOURS = 168;
     private const ADMIN_RECOVERY_KEY_ENV = 'auth.adminRecoveryKey';
+    private const DEFAULT_LOGIN_MAX_ATTEMPTS = 5;
+    private const DEFAULT_LOGIN_LOCK_SECONDS = 900;
 
     public function login()
     {
@@ -36,15 +38,27 @@ class AuthController extends BaseApiController
         $username = trim((string) ($payload['username'] ?? ''));
         $password = (string) ($payload['password'] ?? '');
         $deviceName = trim((string) ($payload['device_name'] ?? 'mobile'));
+        $lockRemainingSeconds = $this->remainingLoginLockSeconds($username);
+        if ($lockRemainingSeconds > 0) {
+            return $this->response->setStatusCode(429)->setJSON([
+                'status' => 'error',
+                'message' => 'Too many failed login attempts. Try again later.',
+                'retry_after_seconds' => $lockRemainingSeconds,
+            ]);
+        }
 
         $userModel = new UserModel();
         $user = $userModel->where('username', $username)->first();
         if (! $user || ! (bool) ($user['is_active'] ?? true) || ! password_verify($password, (string) $user['password_hash'])) {
+            $this->recordFailedLoginAttempt($username);
+
             return $this->response->setStatusCode(401)->setJSON([
                 'status' => 'error',
                 'message' => 'Invalid username or password.',
             ]);
         }
+
+        $this->clearFailedLoginAttempts($username);
 
         $rider = null;
         if (($user['role'] ?? '') === 'rider') {
@@ -204,12 +218,16 @@ class AuthController extends BaseApiController
         ]);
         (new ApiTokenModel())->where('user_id', (int) $user['id'])->delete();
 
-        return $this->success([
+        $responseData = [
             'message' => 'Temporary password issued. Change it immediately after login.',
-            'temporary_password' => $temporaryPassword,
             'username' => (string) $user['username'],
             'requires_password_change' => true,
-        ]);
+        ];
+        if ($this->shouldExposeTemporaryPassword()) {
+            $responseData['temporary_password'] = $temporaryPassword;
+        }
+
+        return $this->success($responseData);
     }
 
     private function getApiTokenTtlHours(): int
@@ -217,6 +235,74 @@ class AuthController extends BaseApiController
         $ttlHours = (int) env('auth.apiTokenTtlHours', self::DEFAULT_TOKEN_TTL_HOURS);
 
         return max(1, $ttlHours);
+    }
+
+    private function getLoginMaxAttempts(): int
+    {
+        $maxAttempts = (int) env('auth.loginMaxAttempts', self::DEFAULT_LOGIN_MAX_ATTEMPTS);
+
+        return max(1, $maxAttempts);
+    }
+
+    private function getLoginLockSeconds(): int
+    {
+        $lockSeconds = (int) env('auth.loginLockSeconds', self::DEFAULT_LOGIN_LOCK_SECONDS);
+
+        return max(60, $lockSeconds);
+    }
+
+    private function loginAttemptCacheKey(string $username): string
+    {
+        $ip = (string) $this->request->getIPAddress();
+
+        return 'auth:api:login-attempts:' . sha1(strtolower(trim($username)) . '|' . $ip);
+    }
+
+    private function remainingLoginLockSeconds(string $username): int
+    {
+        $state = cache($this->loginAttemptCacheKey($username));
+        if (! is_array($state)) {
+            return 0;
+        }
+
+        $lockedUntil = (int) ($state['locked_until'] ?? 0);
+        if ($lockedUntil <= time()) {
+            return 0;
+        }
+
+        return $lockedUntil - time();
+    }
+
+    private function recordFailedLoginAttempt(string $username): void
+    {
+        $key = $this->loginAttemptCacheKey($username);
+        $state = cache($key);
+        if (! is_array($state)) {
+            $state = ['attempts' => 0, 'locked_until' => 0];
+        }
+
+        $state['attempts'] = (int) ($state['attempts'] ?? 0) + 1;
+        if ($state['attempts'] >= $this->getLoginMaxAttempts()) {
+            $state['locked_until'] = time() + $this->getLoginLockSeconds();
+            $state['attempts'] = 0;
+        }
+
+        cache()->save($key, $state, $this->getLoginLockSeconds() + 60);
+    }
+
+    private function clearFailedLoginAttempts(string $username): void
+    {
+        cache()->delete($this->loginAttemptCacheKey($username));
+    }
+
+    private function shouldExposeTemporaryPassword(): bool
+    {
+        $value = env('auth.exposeTemporaryPassword', ENVIRONMENT !== 'production');
+        if (is_bool($value)) {
+            return $value;
+        }
+
+        return filter_var((string) $value, FILTER_VALIDATE_BOOL);
     }
 
     private function resolveRiderForUser(array $user): ?array
