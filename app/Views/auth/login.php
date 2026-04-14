@@ -31,10 +31,16 @@
                         </div>
                         <div class="mb-4">
                             <label class="form-label">Password</label>
-                            <input type="password" name="password" class="form-control" required>
+                            <div class="input-group">
+                                <input type="password" name="password" class="form-control password-field" required>
+                                <button type="button" class="btn btn-outline-secondary password-toggle">Show</button>
+                            </div>
                         </div>
                         <button class="btn btn-dark w-100">Log In</button>
                     </form>
+                    <div class="mt-3 text-center">
+                        <a href="<?= site_url('/forgot-password') ?>" class="small">Forgot password?</a>
+                    </div>
 
                     <hr>
                     <div class="small text-muted">
@@ -48,6 +54,16 @@
 </main>
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.7/dist/js/bootstrap.bundle.min.js"></script>
 <script src="<?= base_url('assets/js/app.js') ?>"></script>
+<script>
+document.querySelectorAll('.password-toggle').forEach(function (button) {
+    button.addEventListener('click', function () {
+        const field = button.closest('.input-group').querySelector('.password-field');
+        const showing = field.type === 'text';
+        field.type = showing ? 'password' : 'text';
+        button.textContent = showing ? 'Show' : 'Hide';
+    });
+});
+</script>
 </body>
 </html>
 

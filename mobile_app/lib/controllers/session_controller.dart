@@ -39,6 +39,18 @@ class SessionController extends ChangeNotifier {
     notifyListeners();
   }
 
+  Future<String> forgotPassword({
+    required String username,
+    required String riderCode,
+    required String contactNumber,
+  }) {
+    return _apiClient.forgotPassword(
+      username: username,
+      riderCode: riderCode,
+      contactNumber: contactNumber,
+    );
+  }
+
   Future<void> logout() async {
     final token = _session?.token;
     if (token != null && token.isNotEmpty) {

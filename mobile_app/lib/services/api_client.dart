@@ -154,11 +154,12 @@ class ApiClient {
       if (response.statusCode >= 400) {
         final body = response.body.trim();
         if (body.isNotEmpty) {
-          try {
-            final json = jsonDecode(body) as Map<String, dynamic>;
-            throw ApiException((json['message'] ?? 'Unable to download payslip.').toString(), statusCode: response.statusCode);
-          } catch (_) {
-            throw ApiException('Unable to download payslip (HTTP ${response.statusCode}).', statusCode: response.statusCode);
+          final parsed = jsonDecode(body);
+          if (parsed is Map<String, dynamic>) {
+            final msg = (parsed['message'] ?? '').toString().trim();
+            if (msg.isNotEmpty) {
+              throw ApiException(msg, statusCode: response.statusCode);
+            }
           }
         }
         throw ApiException('Unable to download payslip (HTTP ${response.statusCode}).', statusCode: response.statusCode);

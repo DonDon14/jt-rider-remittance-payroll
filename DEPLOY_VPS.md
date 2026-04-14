@@ -60,6 +60,8 @@ Fill these values:
 - database host/name/user/password
 - `encryption.key`
 - `auth.bootstrapAdminPassword` before first migrate only
+- `auth.apiTokenTtlHours` to control mobile login lifetime
+- `auth.adminRecoveryKey` for admin forgot-password recovery
 
 Recommended extra lines:
 ```ini
@@ -121,6 +123,7 @@ Verify these flows on the live server:
 ## 10. Mobile apps after deployment
 
 After the VPS is live, rebuild both APKs with the production API URL.
+Do not rely on the current fallback development URL for release builds.
 
 Rider app example:
 ```bash

@@ -21,6 +21,7 @@ class _LoginScreenState extends State<LoginScreen> {
   final _passwordController = TextEditingController();
 
   bool _isSubmitting = false;
+  bool _obscurePassword = true;
   String? _error;
 
   @override
@@ -54,14 +55,14 @@ class _LoginScreenState extends State<LoginScreen> {
           SnackBar(content: Text(error.message)),
         );
       }
-    } catch (_) {
-      const message = 'Unable to sign in right now.';
+    } catch (error) {
+      final message = 'Unable to sign in right now. ${error.toString()}';
       setState(() {
         _error = message;
       });
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text(message)),
+          SnackBar(content: Text(message)),
         );
       }
     } finally {
@@ -71,6 +72,113 @@ class _LoginScreenState extends State<LoginScreen> {
         });
       }
     }
+  }
+
+  Future<void> _openForgotPasswordSheet() async {
+    final usernameController = TextEditingController(text: _usernameController.text.trim());
+    final recoveryKeyController = TextEditingController();
+    bool obscureRecoveryKey = true;
+    bool submitting = false;
+    String? localError;
+
+    await showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      showDragHandle: true,
+      builder: (context) {
+        return StatefulBuilder(
+          builder: (context, setLocalState) {
+            Future<void> submitForgotPassword() async {
+              if (submitting) {
+                return;
+              }
+
+              setLocalState(() {
+                submitting = true;
+                localError = null;
+              });
+
+              final navigator = Navigator.of(this.context);
+              try {
+                final temporaryPassword = await widget.sessionController.forgotPassword(
+                  username: usernameController.text.trim(),
+                  recoveryKey: recoveryKeyController.text.trim(),
+                );
+
+                if (!mounted) {
+                  return;
+                }
+
+                navigator.pop();
+                ScaffoldMessenger.of(this.context).showSnackBar(
+                  SnackBar(
+                    content: Text(
+                      temporaryPassword.isEmpty
+                          ? 'Temporary password issued. Change it immediately after login.'
+                          : 'Temporary password: $temporaryPassword',
+                    ),
+                  ),
+                );
+              } on ApiException catch (error) {
+                setLocalState(() {
+                  localError = error.message;
+                });
+              } finally {
+                if (context.mounted) {
+                  setLocalState(() {
+                    submitting = false;
+                  });
+                }
+              }
+            }
+
+            return Padding(
+              padding: EdgeInsets.only(
+                left: 20,
+                right: 20,
+                top: 8,
+                bottom: MediaQuery.of(context).viewInsets.bottom + 20,
+              ),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  Text('Forgot Password', style: Theme.of(context).textTheme.titleLarge),
+                  const SizedBox(height: 10),
+                  const Text('For admin accounts, provide your username and admin recovery key.'),
+                  const SizedBox(height: 14),
+                  TextField(
+                    controller: usernameController,
+                    decoration: const InputDecoration(labelText: 'Username'),
+                  ),
+                  const SizedBox(height: 10),
+                  TextField(
+                    controller: recoveryKeyController,
+                    obscureText: obscureRecoveryKey,
+                    decoration: InputDecoration(
+                      labelText: 'Admin Recovery Key',
+                      suffixIcon: IconButton(
+                        onPressed: () => setLocalState(() => obscureRecoveryKey = !obscureRecoveryKey),
+                        icon: Icon(obscureRecoveryKey ? Icons.visibility_off_outlined : Icons.visibility_outlined),
+                      ),
+                    ),
+                  ),
+                  if (localError != null) ...[
+                    const SizedBox(height: 10),
+                    Text(localError!, style: TextStyle(color: Theme.of(context).colorScheme.error)),
+                  ],
+                  const SizedBox(height: 14),
+                  FilledButton(
+                    onPressed: submitting ? null : submitForgotPassword,
+                    child: Text(submitting ? 'Processing...' : 'Issue Temporary Password'),
+                  ),
+                ],
+              ),
+            );
+          },
+        );
+      },
+    );
   }
 
   @override
@@ -177,13 +285,24 @@ class _LoginScreenState extends State<LoginScreen> {
                               const SizedBox(height: 16),
                               TextFormField(
                                 controller: _passwordController,
-                                decoration: const InputDecoration(
+                                decoration: InputDecoration(
                                   labelText: 'Password',
-                                  prefixIcon: Icon(Icons.lock_outline_rounded),
+                                  prefixIcon: const Icon(Icons.lock_outline_rounded),
+                                  suffixIcon: IconButton(
+                                    onPressed: () => setState(() => _obscurePassword = !_obscurePassword),
+                                    icon: Icon(_obscurePassword ? Icons.visibility_off_outlined : Icons.visibility_outlined),
+                                  ),
                                 ),
-                                obscureText: true,
+                                obscureText: _obscurePassword,
                                 validator: (value) => value == null || value.isEmpty ? 'Password is required.' : null,
                                 onFieldSubmitted: (_) => _isSubmitting ? null : _submit(),
+                              ),
+                              Align(
+                                alignment: Alignment.centerRight,
+                                child: TextButton(
+                                  onPressed: _isSubmitting ? null : _openForgotPasswordSheet,
+                                  child: const Text('Forgot password?'),
+                                ),
                               ),
                               if (_error != null) ...[
                                 const SizedBox(height: 14),

@@ -20,6 +20,7 @@ class _LoginScreenState extends State<LoginScreen> {
   final _passwordController = TextEditingController();
   final _formKey = GlobalKey<FormState>();
   bool _submitting = false;
+  bool _obscurePassword = true;
   String? _error;
 
   @override
@@ -71,6 +72,108 @@ class _LoginScreenState extends State<LoginScreen> {
     ScaffoldMessenger.of(context)
       ..hideCurrentSnackBar()
       ..showSnackBar(SnackBar(content: Text(message)));
+  }
+
+  Future<void> _openForgotPasswordSheet() async {
+    final usernameController = TextEditingController(text: _usernameController.text.trim());
+    final riderCodeController = TextEditingController();
+    final contactController = TextEditingController();
+    bool submitting = false;
+    String? localError;
+
+    await showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      showDragHandle: true,
+      builder: (context) {
+        return StatefulBuilder(
+          builder: (context, setLocalState) {
+            Future<void> submitForgotPassword() async {
+              if (submitting) {
+                return;
+              }
+
+              setLocalState(() {
+                submitting = true;
+                localError = null;
+              });
+
+              try {
+                final temporaryPassword = await widget.sessionController.forgotPassword(
+                  username: usernameController.text.trim(),
+                  riderCode: riderCodeController.text.trim(),
+                  contactNumber: contactController.text.trim(),
+                );
+
+                if (!context.mounted) {
+                  return;
+                }
+
+                Navigator.of(context).pop();
+                _showError(
+                  temporaryPassword.isEmpty
+                      ? 'Temporary password issued. Check with your administrator, then change it after login.'
+                      : 'Temporary password: $temporaryPassword',
+                );
+              } on ApiException catch (error) {
+                setLocalState(() {
+                  localError = error.message;
+                });
+              } finally {
+                if (context.mounted) {
+                  setLocalState(() {
+                    submitting = false;
+                  });
+                }
+              }
+            }
+
+            return Padding(
+              padding: EdgeInsets.only(
+                left: 20,
+                right: 20,
+                top: 8,
+                bottom: MediaQuery.of(context).viewInsets.bottom + 20,
+              ),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  Text('Forgot Password', style: Theme.of(context).textTheme.titleLarge),
+                  const SizedBox(height: 10),
+                  const Text('For rider accounts, provide username, rider code, and contact number.'),
+                  const SizedBox(height: 14),
+                  TextField(
+                    controller: usernameController,
+                    decoration: const InputDecoration(labelText: 'Username'),
+                  ),
+                  const SizedBox(height: 10),
+                  TextField(
+                    controller: riderCodeController,
+                    decoration: const InputDecoration(labelText: 'Rider Code'),
+                  ),
+                  const SizedBox(height: 10),
+                  TextField(
+                    controller: contactController,
+                    decoration: const InputDecoration(labelText: 'Contact Number'),
+                    keyboardType: TextInputType.phone,
+                  ),
+                  if (localError != null) ...[
+                    const SizedBox(height: 10),
+                    Text(localError!, style: TextStyle(color: Theme.of(context).colorScheme.error)),
+                  ],
+                  const SizedBox(height: 14),
+                  FilledButton(
+                    onPressed: submitting ? null : submitForgotPassword,
+                    child: Text(submitting ? 'Processing...' : 'Issue Temporary Password'),
+                  ),
+                ],
+              ),
+            );
+          },
+        );
+      },
+    );
   }
 
   @override
@@ -179,15 +282,26 @@ class _LoginScreenState extends State<LoginScreen> {
                               const SizedBox(height: 16),
                               TextFormField(
                                 controller: _passwordController,
-                                obscureText: true,
-                                decoration: const InputDecoration(
+                                obscureText: _obscurePassword,
+                                decoration: InputDecoration(
                                   labelText: 'Password',
-                                  prefixIcon: Icon(Icons.lock_outline_rounded),
+                                  prefixIcon: const Icon(Icons.lock_outline_rounded),
+                                  suffixIcon: IconButton(
+                                    onPressed: () => setState(() => _obscurePassword = !_obscurePassword),
+                                    icon: Icon(_obscurePassword ? Icons.visibility_off_outlined : Icons.visibility_outlined),
+                                  ),
                                 ),
                                 validator: (value) => (value == null || value.isEmpty)
                                     ? 'Enter your password.'
                                     : null,
                                 onFieldSubmitted: (_) => _submitting ? null : _submit(),
+                              ),
+                              Align(
+                                alignment: Alignment.centerRight,
+                                child: TextButton(
+                                  onPressed: _submitting ? null : _openForgotPasswordSheet,
+                                  child: const Text('Forgot password?'),
+                                ),
                               ),
                               if (_error != null) ...[
                                 const SizedBox(height: 14),

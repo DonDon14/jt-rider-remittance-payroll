@@ -2,11 +2,14 @@
 
 namespace App\Controllers;
 
+use App\Models\ApiTokenModel;
 use App\Models\RiderModel;
 use App\Models\UserModel;
 
 class AuthController extends BaseController
 {
+    private const ADMIN_RECOVERY_KEY_ENV = 'auth.adminRecoveryKey';
+
     public function loginForm()
     {
         if ($this->session->get('isLoggedIn')) {
@@ -132,6 +135,68 @@ class AuthController extends BaseController
         return redirect()->to('/login')->with('success', 'You have been logged out.');
     }
 
+    public function forgotPasswordForm()
+    {
+        return view('auth/forgot_password', [
+            'title' => 'Forgot Password - J&T Rider Remittance & Payroll',
+        ]);
+    }
+
+    public function forgotPassword()
+    {
+        $rules = [
+            'username' => 'required|max_length[80]',
+            'rider_code' => 'permit_empty|max_length[40]',
+            'contact_number' => 'permit_empty|max_length[30]',
+            'recovery_key' => 'permit_empty|max_length[255]',
+        ];
+
+        if (! $this->validate($rules)) {
+            return redirect()->back()->withInput()->with('error', implode(' ', $this->validator->getErrors()));
+        }
+
+        $username = trim((string) $this->request->getPost('username'));
+        $riderCode = strtolower(trim((string) $this->request->getPost('rider_code')));
+        $contactNumber = preg_replace('/\D+/', '', (string) $this->request->getPost('contact_number')) ?? '';
+        $recoveryKey = trim((string) $this->request->getPost('recovery_key'));
+
+        $userModel = new UserModel();
+        $user = $userModel->where('username', $username)->first();
+        if (! $user || ! (bool) ($user['is_active'] ?? true)) {
+            return redirect()->back()->withInput()->with('error', 'Account not found or inactive.');
+        }
+
+        if (($user['role'] ?? '') === 'rider') {
+            $rider = $this->resolveRiderForUser($user);
+            if (! $rider) {
+                return redirect()->back()->withInput()->with('error', 'Rider account is not linked to a valid profile.');
+            }
+
+            $savedRiderCode = strtolower(trim((string) ($rider['rider_code'] ?? '')));
+            $savedContactNumber = preg_replace('/\D+/', '', (string) ($rider['contact_number'] ?? '')) ?? '';
+            if ($riderCode === '' || $contactNumber === '' || $riderCode !== $savedRiderCode || $contactNumber !== $savedContactNumber) {
+                return redirect()->back()->withInput()->with('error', 'Rider verification failed. Check rider code and contact number.');
+            }
+        } else {
+            $adminRecoveryKey = trim((string) env(self::ADMIN_RECOVERY_KEY_ENV));
+            if ($adminRecoveryKey === '') {
+                return redirect()->back()->withInput()->with('error', 'Admin recovery is not configured. Set auth.adminRecoveryKey in environment.');
+            }
+            if ($recoveryKey === '' || ! hash_equals($adminRecoveryKey, $recoveryKey)) {
+                return redirect()->back()->withInput()->with('error', 'Admin recovery key is invalid.');
+            }
+        }
+
+        $temporaryPassword = $this->generateTemporaryPassword();
+        $userModel->update((int) $user['id'], [
+            'password_hash' => password_hash($temporaryPassword, PASSWORD_DEFAULT),
+            'force_password_change' => 1,
+        ]);
+        (new ApiTokenModel())->where('user_id', (int) $user['id'])->delete();
+
+        return redirect()->to('/login')->with('success', 'Temporary password issued: ' . $temporaryPassword . '. Change it immediately after login.');
+    }
+
     private function resolveRiderId(array $user): ?int
     {
         if (($user['role'] ?? '') !== 'rider') {
@@ -158,5 +223,27 @@ class AuthController extends BaseController
         }
 
         return null;
+    }
+
+    private function resolveRiderForUser(array $user): ?array
+    {
+        $riderId = $this->resolveRiderId($user);
+        if ($riderId === null) {
+            return null;
+        }
+
+        return (new RiderModel())->find($riderId);
+    }
+
+    private function generateTemporaryPassword(int $length = 12): string
+    {
+        $alphabet = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789@#$%';
+        $max = strlen($alphabet) - 1;
+        $password = '';
+        for ($i = 0; $i < $length; $i++) {
+            $password .= $alphabet[random_int(0, $max)];
+        }
+
+        return $password;
     }
 }

@@ -92,6 +92,8 @@ abstract class BaseApiController extends \App\Controllers\BaseController
         }
 
         if (! empty($token['expires_at']) && strtotime((string) $token['expires_at']) < time()) {
+            (new ApiTokenModel())->delete((int) $token['id']);
+
             return $this->failUnauthorized('API token has expired.');
         }
 
