@@ -309,7 +309,7 @@ class AuthController extends BaseController
     {
         $ip = (string) $this->request->getIPAddress();
 
-        return 'auth:web:login-attempts:' . sha1(strtolower(trim($username)) . '|' . $ip);
+        return 'auth_web_login_attempts_' . sha1(strtolower(trim($username)) . '|' . $ip);
     }
 
     private function remainingLoginLockSeconds(string $username): int
@@ -379,3 +379,4 @@ class AuthController extends BaseController
         log_message($level, 'Auth security event: {event}', $context);
     }
 }
+

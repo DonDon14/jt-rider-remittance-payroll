@@ -289,7 +289,7 @@ class AuthController extends BaseApiController
     {
         $ip = (string) $this->request->getIPAddress();
 
-        return 'auth:api:login-attempts:' . sha1(strtolower(trim($username)) . '|' . $ip);
+        return 'auth_api_login_attempts_' . sha1(strtolower(trim($username)) . '|' . $ip);
     }
 
     private function remainingLoginLockSeconds(string $username): int
@@ -385,3 +385,4 @@ class AuthController extends BaseApiController
         return $password;
     }
 }
+

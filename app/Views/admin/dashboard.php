@@ -4,23 +4,30 @@
 <div class="page-hero">
     <div>
         <h2 class="mb-0">Operations Dashboard</h2>
-        <p>Monitor rider activity, cash remittance accuracy, shortage exposure, payroll readiness, and rider-submitted requests from one place.</p>
+        <p>Compact view of operations. Expand sections only when needed.</p>
     </div>
     <div class="text-muted">Today: <?= esc($today) ?></div>
 </div>
 
-<div class="row g-3 mb-4">
-    <div class="col-md-6 col-xl"><div class="card stat-card"><div class="card-body"><div class="stat-label">Riders</div><div class="stat-value"><?= (int) $summary['riders'] ?></div></div></div></div>
-    <div class="col-md-6 col-xl"><div class="card stat-card"><div class="card-body"><div class="stat-label">Today's Delivered Parcels</div><div class="stat-value"><?= (int) $summary['today_deliveries'] ?></div></div></div></div>
-    <div class="col-md-6 col-xl"><div class="card stat-card"><div class="card-body"><div class="stat-label">Today's Salary Earnings</div><div class="stat-value">PHP <?= number_format((float) $summary['today_salary_earnings'], 2) ?></div></div></div></div>
-    <div class="col-md-6 col-xl"><div class="card stat-card"><div class="card-body"><div class="stat-label">Expected Remittance</div><div class="stat-value">PHP <?= number_format((float) $summary['today_expected_remittance'], 2) ?></div></div></div></div>
-    <div class="col-md-6 col-xl"><div class="card stat-card"><div class="card-body"><div class="stat-label">Today's Remitted</div><div class="stat-value">PHP <?= number_format((float) $summary['today_remitted'], 2) ?></div></div></div></div>
-    <div class="col-md-6 col-xl"><div class="card stat-card"><div class="card-body"><div class="stat-label">Open Shortages</div><div class="stat-value"><?= (int) $summary['open_shortages'] ?></div></div></div></div>
-    <div class="col-md-6 col-xl"><div class="card stat-card"><div class="card-body"><div class="stat-label">Pending Rider Requests</div><div class="stat-value"><?= (int) $summary['pending_submission_requests'] ?></div></div></div></div>
-    <div class="col-md-6 col-xl"><div class="card stat-card"><div class="card-body"><div class="stat-label">Pending Corrections</div><div class="stat-value"><?= (int) $summary['pending_correction_requests'] ?></div></div></div></div>
+<div class="row g-3 mb-2">
+    <div class="col-md-6 col-xl-3"><div class="card stat-card"><div class="card-body"><div class="stat-label">Riders</div><div class="stat-value"><?= (int) $summary['riders'] ?></div></div></div></div>
+    <div class="col-md-6 col-xl-3"><div class="card stat-card"><div class="card-body"><div class="stat-label">Today's Delivered Parcels</div><div class="stat-value"><?= (int) $summary['today_deliveries'] ?></div></div></div></div>
+    <div class="col-md-6 col-xl-3"><div class="card stat-card"><div class="card-body"><div class="stat-label">Today's Remitted</div><div class="stat-value">PHP <?= number_format((float) $summary['today_remitted'], 2) ?></div></div></div></div>
+    <div class="col-md-6 col-xl-3"><div class="card stat-card"><div class="card-body"><div class="stat-label">Open Shortages</div><div class="stat-value"><?= (int) $summary['open_shortages'] ?></div></div></div></div>
 </div>
 
-<?php if (! empty($accountSecurity)): ?>
+<div class="card mb-4">
+    <div class="card-body py-2">
+        <div class="d-flex flex-wrap gap-2 small">
+            <span class="badge text-bg-light">Salary Earnings: PHP <?= number_format((float) $summary['today_salary_earnings'], 2) ?></span>
+            <span class="badge text-bg-light">Expected Remittance: PHP <?= number_format((float) $summary['today_expected_remittance'], 2) ?></span>
+            <span class="badge text-bg-light">Pending Rider Requests: <?= (int) $summary['pending_submission_requests'] ?></span>
+            <span class="badge text-bg-light">Pending Corrections: <?= (int) $summary['pending_correction_requests'] ?></span>
+        </div>
+    </div>
+</div>
+
+<?php if (! empty($accountSecurity) && ! in_array((string) ($accountSecurity['tone'] ?? ''), ['success', 'secondary'], true)): ?>
     <div class="alert alert-<?= esc($accountSecurity['tone'] ?? 'secondary') ?> d-flex justify-content-between align-items-center mb-4">
         <div>
             <div class="fw-semibold">Account Security: <?= esc($accountSecurity['label'] ?? 'Status available') ?></div>
@@ -44,209 +51,234 @@
     </div>
 </div>
 
-<div class="quick-grid mb-4">
-    <div class="card"><div class="card-body"><h5>Rider Requests</h5><p class="text-muted">Review rider-submitted delivery requests before remittance collection. Pending now: <?= (int) $summary['pending_submission_requests'] ?>.</p><a href="<?= site_url('/admin/remittances') ?>" class="btn btn-outline-dark">Open Requests</a></div></div>
-    <div class="card"><div class="card-body"><h5>Delivery History</h5><p class="text-muted">Search previous rider-day records and inspect salary earnings against expected remittances.</p><a href="<?= site_url('/admin/history') ?>" class="btn btn-outline-dark">Open History</a></div></div>
-    <div class="card"><div class="card-body"><h5>Corrections Queue</h5><p class="text-muted">Review pending correction requests and resolve delivery-day changes branch-wide.</p><a href="<?= site_url('/admin/corrections') ?>" class="btn btn-outline-dark">Open Corrections</a></div></div>
-    <div class="card"><div class="card-body"><h5>Payroll Adjustments</h5><p class="text-muted">Add bonuses and deductions that lock into payroll just like operational records.</p><a href="<?= site_url('/admin/adjustments') ?>" class="btn btn-outline-dark">Open Adjustments</a></div></div>
-    <div class="card"><div class="card-body"><h5>Analytics</h5><p class="text-muted">Review trends, rider rankings, and daily delivery output.</p><a href="<?= site_url('/admin/analytics') ?>" class="btn btn-outline-dark">Open Analytics</a></div></div>
-</div>
-
-<div class="row g-3 mb-4">
-    <div class="col-lg-6">
-        <div class="card h-100">
-            <div class="card-header fw-semibold">Pending Rider Delivery Requests</div>
-            <div class="table-responsive">
-                <table class="table table-sm table-hover mb-0">
-                    <thead>
-                        <tr>
-                            <th>Date</th>
-                            <th>Rider</th>
-                            <th>Allocated</th>
-                            <th>Successful</th>
-                            <th>Account</th>
-                            <th>Expected Remittance</th>
-                            <th></th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        <?php foreach ($pendingSubmissions as $submission): ?>
-                            <tr>
-                                <td><?= esc($submission['delivery_date']) ?></td>
-                                <td><?= esc($submission['rider_code']) ?> - <?= esc($submission['name']) ?></td>
-                                <td><?= (int) $submission['allocated_parcels'] ?></td>
-                                <td><?= (int) $submission['successful_deliveries'] ?></td>
-                                <td><?= esc(trim((string) ($submission['remittance_account_name'] ?? '')) !== '' ? (($submission['remittance_account_name'] ?? '') . (! empty($submission['remittance_account_number']) ? ' (' . $submission['remittance_account_number'] . ')' : '')) : '-') ?></td>
-                                <td>PHP <?= number_format((float) ($submission['expected_remittance'] ?? 0), 2) ?></td>
-                                <td><a href="<?= site_url('/admin/remittances') ?>" class="btn btn-sm btn-outline-dark">Open Queue</a></td>
-                            </tr>
-                        <?php endforeach; ?>
-                        <?php if (empty($pendingSubmissions)): ?>
-                            <tr><td colspan="7" class="text-center text-muted py-4">No rider submitted delivery requests waiting for admin review.</td></tr>
-                        <?php endif; ?>
-                    </tbody>
-                </table>
-            </div>
-        </div>
-    </div>
-    <div class="col-lg-6">
-        <div class="card h-100">
-            <div class="card-header fw-semibold">Pending Correction Requests</div>
-            <div class="table-responsive">
-                <table class="table table-sm table-hover mb-0">
-                    <thead>
-                        <tr>
-                            <th>Requested</th>
-                            <th>Delivery Date</th>
-                            <th>Rider</th>
-                            <th>Reason</th>
-                            <th></th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        <?php foreach ($pendingCorrections as $request): ?>
-                            <tr>
-                                <td><?= esc($request['created_at'] ?? '-') ?></td>
-                                <td><?= esc($request['delivery_date']) ?></td>
-                                <td><?= esc($request['rider_code']) ?> - <?= esc($request['name']) ?></td>
-                                <td><?= esc($request['reason']) ?></td>
-                                <td><a href="<?= site_url('/admin/deliveries/' . (int) $request['delivery_record_id']) ?>" class="btn btn-sm btn-outline-dark">Open Record</a></td>
-                            </tr>
-                        <?php endforeach; ?>
-                        <?php if (empty($pendingCorrections)): ?>
-                            <tr><td colspan="5" class="text-center text-muted py-4">No correction requests waiting for review.</td></tr>
-                        <?php endif; ?>
-                    </tbody>
-                </table>
-            </div>
-        </div>
-    </div>
-</div>
-
-<div class="row g-3 mb-4">
-    <div class="col-lg-6">
-        <div class="card rank-card h-100">
-            <div class="card-header fw-semibold">Top Performing Riders</div>
-            <div class="list-group list-group-flush">
-                <?php foreach ($topRiders as $index => $rider): ?>
-                    <div class="list-group-item d-flex justify-content-between align-items-start">
-                        <div>
-                            <div class="fw-semibold"><?= $index + 1 ?>. <?= esc($rider['rider_code']) ?> - <?= esc($rider['name']) ?></div>
-                            <div class="metric-note">Success rate: <?= number_format((float) $rider['success_rate'], 2) ?>%</div>
-                        </div>
-                        <div class="text-end">
-                            <div class="fw-semibold"><?= (int) $rider['successful_total'] ?> delivered</div>
-                            <div class="metric-note">PHP <?= number_format((float) $rider['earning_total'], 2) ?></div>
-                        </div>
-                    </div>
-                <?php endforeach; ?>
-                <?php if (empty($topRiders)): ?>
-                    <div class="list-group-item text-muted">No performance data yet.</div>
-                <?php endif; ?>
-            </div>
-        </div>
-    </div>
-    <div class="col-lg-6">
-        <div class="card rank-card h-100">
-            <div class="card-header fw-semibold">Lower Performing Riders</div>
-            <div class="list-group list-group-flush">
-                <?php foreach ($lowRiders as $index => $rider): ?>
-                    <div class="list-group-item d-flex justify-content-between align-items-start">
-                        <div>
-                            <div class="fw-semibold"><?= $index + 1 ?>. <?= esc($rider['rider_code']) ?> - <?= esc($rider['name']) ?></div>
-                            <div class="metric-note">Success rate: <?= number_format((float) $rider['success_rate'], 2) ?>%</div>
-                        </div>
-                        <div class="text-end">
-                            <div class="fw-semibold"><?= (int) $rider['successful_total'] ?> delivered</div>
-                            <div class="metric-note">PHP <?= number_format((float) $rider['earning_total'], 2) ?></div>
-                        </div>
-                    </div>
-                <?php endforeach; ?>
-                <?php if (empty($lowRiders)): ?>
-                    <div class="list-group-item text-muted">No performance data yet.</div>
-                <?php endif; ?>
-            </div>
-        </div>
-    </div>
-</div>
-
-<div class="row g-3 mb-4">
-    <div class="col-lg-7">
-        <div class="card h-100">
-            <div class="card-header fw-semibold">Recent Delivery Records</div>
-            <div class="table-responsive">
-                <table class="table table-sm table-hover mb-0">
-                    <thead>
-                        <tr>
-                            <th>Date</th>
-                            <th>Rider</th>
-                            <th>Source</th>
-                            <th>Successful</th>
-                            <th>Salary Earning</th>
-                            <th>Expected Remittance</th>
-                            <th></th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        <?php foreach ($recentDeliveries as $record): ?>
-                            <tr>
-                                <td><?= esc($record['delivery_date']) ?></td>
-                                <td><?= esc($record['rider_code']) ?> - <?= esc($record['name']) ?></td>
-                                <td><span class="badge text-bg-<?= ($record['entry_source'] ?? 'ADMIN_MANUAL') === 'RIDER_SUBMISSION' ? 'info' : 'secondary' ?>"><?= esc(($record['entry_source'] ?? 'ADMIN_MANUAL') === 'RIDER_SUBMISSION' ? 'Rider Submission' : 'Admin Manual') ?></span></td>
-                                <td><?= (int) $record['successful_deliveries'] ?></td>
-                                <td>PHP <?= number_format((float) $record['total_due'], 2) ?></td>
-                                <td>PHP <?= number_format((float) ($record['expected_remittance'] ?? 0), 2) ?></td>
-                                <td><a href="<?= site_url('/admin/deliveries/' . (int) $record['id']) ?>" class="btn btn-sm btn-outline-primary">Details</a></td>
-                            </tr>
-                        <?php endforeach; ?>
-                        <?php if (empty($recentDeliveries)): ?>
-                            <tr><td colspan="7" class="text-center text-muted py-4">No delivery records yet.</td></tr>
-                        <?php endif; ?>
-                    </tbody>
-                </table>
-            </div>
-        </div>
-    </div>
-    <div class="col-lg-5">
-        <div class="card h-100">
-            <div class="card-header fw-semibold">Recent Remittance Outcomes</div>
-            <div class="list-group list-group-flush">
-                <?php foreach ($recentRemittances as $item): ?>
-                    <div class="list-group-item">
-                        <div class="d-flex justify-content-between align-items-start gap-2">
-                            <div>
-                                <div class="fw-semibold"><?= esc($item['rider_code']) ?> - <?= esc($item['name']) ?></div>
-                                <div class="text-muted small"><?= esc($item['delivery_date']) ?></div>
+<div class="accordion mb-4" id="dashboardSections">
+    <div class="accordion-item">
+        <h2 class="accordion-header" id="headingQueues">
+            <button class="accordion-button" type="button" data-bs-toggle="collapse" data-bs-target="#collapseQueues" aria-expanded="true" aria-controls="collapseQueues">
+                Priority Queues
+            </button>
+        </h2>
+        <div id="collapseQueues" class="accordion-collapse collapse show" aria-labelledby="headingQueues" data-bs-parent="#dashboardSections">
+            <div class="accordion-body">
+                <div class="row g-3">
+                    <div class="col-lg-6">
+                        <div class="card h-100">
+                            <div class="card-header fw-semibold">Pending Rider Delivery Requests</div>
+                            <div class="table-responsive">
+                                <table class="table table-sm table-hover mb-0">
+                                    <thead>
+                                        <tr>
+                                            <th>Date</th>
+                                            <th>Rider</th>
+                                            <th>Allocated</th>
+                                            <th>Successful</th>
+                                            <th>Expected</th>
+                                            <th></th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        <?php foreach ($pendingSubmissions as $submission): ?>
+                                            <tr>
+                                                <td><?= esc($submission['delivery_date']) ?></td>
+                                                <td><?= esc($submission['rider_code']) ?></td>
+                                                <td><?= (int) $submission['allocated_parcels'] ?></td>
+                                                <td><?= (int) $submission['successful_deliveries'] ?></td>
+                                                <td>PHP <?= number_format((float) ($submission['expected_remittance'] ?? 0), 2) ?></td>
+                                                <td><a href="<?= site_url('/admin/remittances') ?>" class="btn btn-sm btn-outline-dark">Open</a></td>
+                                            </tr>
+                                        <?php endforeach; ?>
+                                        <?php if (empty($pendingSubmissions)): ?>
+                                            <tr><td colspan="6" class="text-center text-muted py-4">No pending rider requests.</td></tr>
+                                        <?php endif; ?>
+                                    </tbody>
+                                </table>
                             </div>
-                            <span class="badge <?= 'badge-' . strtolower($item['variance_type']) ?>"><?= esc($item['variance_type']) ?></span>
                         </div>
                     </div>
-                <?php endforeach; ?>
-                <?php if (empty($recentRemittances)): ?>
-                    <div class="list-group-item text-muted">No remittances recorded yet.</div>
-                <?php endif; ?>
-            </div>
-        </div>
-    </div>
-</div>
-
-<div class="card mb-4">
-    <div class="card-header fw-semibold">Active Announcements</div>
-    <div class="list-group list-group-flush">
-        <?php foreach ($announcements as $announcement): ?>
-            <div class="list-group-item">
-                <div class="d-flex justify-content-between align-items-start gap-3">
-                    <div>
-                        <div class="fw-semibold"><?= esc($announcement['title']) ?></div>
-                        <div class="text-muted small mb-1">Published <?= esc(date('Y-m-d', strtotime((string) $announcement['published_at']))) ?></div>
-                        <div><?= esc($announcement['message']) ?></div>
+                    <div class="col-lg-6">
+                        <div class="card h-100">
+                            <div class="card-header fw-semibold">Pending Correction Requests</div>
+                            <div class="table-responsive">
+                                <table class="table table-sm table-hover mb-0">
+                                    <thead>
+                                        <tr>
+                                            <th>Requested</th>
+                                            <th>Delivery Date</th>
+                                            <th>Rider</th>
+                                            <th></th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        <?php foreach ($pendingCorrections as $request): ?>
+                                            <tr>
+                                                <td><?= esc($request['created_at'] ?? '-') ?></td>
+                                                <td><?= esc($request['delivery_date']) ?></td>
+                                                <td><?= esc($request['rider_code']) ?></td>
+                                                <td><a href="<?= site_url('/admin/deliveries/' . (int) $request['delivery_record_id']) ?>" class="btn btn-sm btn-outline-dark">Open</a></td>
+                                            </tr>
+                                        <?php endforeach; ?>
+                                        <?php if (empty($pendingCorrections)): ?>
+                                            <tr><td colspan="4" class="text-center text-muted py-4">No pending corrections.</td></tr>
+                                        <?php endif; ?>
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
                     </div>
                 </div>
             </div>
-        <?php endforeach; ?>
-        <?php if (empty($announcements)): ?>
-            <div class="list-group-item text-muted">No active announcements.</div>
-        <?php endif; ?>
+        </div>
+    </div>
+
+    <div class="accordion-item">
+        <h2 class="accordion-header" id="headingPerformance">
+            <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#collapsePerformance" aria-expanded="false" aria-controls="collapsePerformance">
+                Rider Performance
+            </button>
+        </h2>
+        <div id="collapsePerformance" class="accordion-collapse collapse" aria-labelledby="headingPerformance" data-bs-parent="#dashboardSections">
+            <div class="accordion-body">
+                <div class="row g-3">
+                    <div class="col-lg-6">
+                        <div class="card rank-card h-100">
+                            <div class="card-header fw-semibold">Top Riders</div>
+                            <div class="list-group list-group-flush">
+                                <?php foreach ($topRiders as $index => $rider): ?>
+                                    <div class="list-group-item d-flex justify-content-between align-items-start">
+                                        <div>
+                                            <div class="fw-semibold"><?= $index + 1 ?>. <?= esc($rider['rider_code']) ?> - <?= esc($rider['name']) ?></div>
+                                            <div class="metric-note">Success rate: <?= number_format((float) $rider['success_rate'], 2) ?>%</div>
+                                        </div>
+                                        <div class="text-end">
+                                            <div class="fw-semibold"><?= (int) $rider['successful_total'] ?> delivered</div>
+                                            <div class="metric-note">PHP <?= number_format((float) $rider['earning_total'], 2) ?></div>
+                                        </div>
+                                    </div>
+                                <?php endforeach; ?>
+                                <?php if (empty($topRiders)): ?>
+                                    <div class="list-group-item text-muted">No performance data yet.</div>
+                                <?php endif; ?>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="col-lg-6">
+                        <div class="card rank-card h-100">
+                            <div class="card-header fw-semibold">Needs Attention</div>
+                            <div class="list-group list-group-flush">
+                                <?php foreach ($lowRiders as $index => $rider): ?>
+                                    <div class="list-group-item d-flex justify-content-between align-items-start">
+                                        <div>
+                                            <div class="fw-semibold"><?= $index + 1 ?>. <?= esc($rider['rider_code']) ?> - <?= esc($rider['name']) ?></div>
+                                            <div class="metric-note">Success rate: <?= number_format((float) $rider['success_rate'], 2) ?>%</div>
+                                        </div>
+                                        <div class="text-end">
+                                            <div class="fw-semibold"><?= (int) $rider['successful_total'] ?> delivered</div>
+                                            <div class="metric-note">PHP <?= number_format((float) $rider['earning_total'], 2) ?></div>
+                                        </div>
+                                    </div>
+                                <?php endforeach; ?>
+                                <?php if (empty($lowRiders)): ?>
+                                    <div class="list-group-item text-muted">No performance data yet.</div>
+                                <?php endif; ?>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="accordion-item">
+        <h2 class="accordion-header" id="headingOperations">
+            <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#collapseOperations" aria-expanded="false" aria-controls="collapseOperations">
+                Recent Operations
+            </button>
+        </h2>
+        <div id="collapseOperations" class="accordion-collapse collapse" aria-labelledby="headingOperations" data-bs-parent="#dashboardSections">
+            <div class="accordion-body">
+                <div class="row g-3">
+                    <div class="col-lg-7">
+                        <div class="card h-100">
+                            <div class="card-header fw-semibold">Recent Delivery Records</div>
+                            <div class="table-responsive">
+                                <table class="table table-sm table-hover mb-0">
+                                    <thead>
+                                        <tr>
+                                            <th>Date</th>
+                                            <th>Rider</th>
+                                            <th>Source</th>
+                                            <th>Successful</th>
+                                            <th>Salary</th>
+                                            <th></th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        <?php foreach ($recentDeliveries as $record): ?>
+                                            <tr>
+                                                <td><?= esc($record['delivery_date']) ?></td>
+                                                <td><?= esc($record['rider_code']) ?></td>
+                                                <td><span class="badge text-bg-<?= ($record['entry_source'] ?? 'ADMIN_MANUAL') === 'RIDER_SUBMISSION' ? 'info' : 'secondary' ?>"><?= esc(($record['entry_source'] ?? 'ADMIN_MANUAL') === 'RIDER_SUBMISSION' ? 'Rider' : 'Admin') ?></span></td>
+                                                <td><?= (int) $record['successful_deliveries'] ?></td>
+                                                <td>PHP <?= number_format((float) $record['total_due'], 2) ?></td>
+                                                <td><a href="<?= site_url('/admin/deliveries/' . (int) $record['id']) ?>" class="btn btn-sm btn-outline-primary">Details</a></td>
+                                            </tr>
+                                        <?php endforeach; ?>
+                                        <?php if (empty($recentDeliveries)): ?>
+                                            <tr><td colspan="6" class="text-center text-muted py-4">No delivery records yet.</td></tr>
+                                        <?php endif; ?>
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="col-lg-5">
+                        <div class="card h-100">
+                            <div class="card-header fw-semibold">Recent Remittance Outcomes</div>
+                            <div class="list-group list-group-flush">
+                                <?php foreach ($recentRemittances as $item): ?>
+                                    <div class="list-group-item">
+                                        <div class="d-flex justify-content-between align-items-start gap-2">
+                                            <div>
+                                                <div class="fw-semibold"><?= esc($item['rider_code']) ?> - <?= esc($item['name']) ?></div>
+                                                <div class="text-muted small"><?= esc($item['delivery_date']) ?></div>
+                                            </div>
+                                            <span class="badge <?= 'badge-' . strtolower($item['variance_type']) ?>"><?= esc($item['variance_type']) ?></span>
+                                        </div>
+                                    </div>
+                                <?php endforeach; ?>
+                                <?php if (empty($recentRemittances)): ?>
+                                    <div class="list-group-item text-muted">No remittances recorded yet.</div>
+                                <?php endif; ?>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="accordion-item">
+        <h2 class="accordion-header" id="headingAnnouncements">
+            <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#collapseAnnouncements" aria-expanded="false" aria-controls="collapseAnnouncements">
+                Active Announcements
+            </button>
+        </h2>
+        <div id="collapseAnnouncements" class="accordion-collapse collapse" aria-labelledby="headingAnnouncements" data-bs-parent="#dashboardSections">
+            <div class="accordion-body p-0">
+                <div class="list-group list-group-flush">
+                    <?php foreach ($announcements as $announcement): ?>
+                        <div class="list-group-item">
+                            <div class="fw-semibold"><?= esc($announcement['title']) ?></div>
+                            <div class="text-muted small mb-1">Published <?= esc(date('Y-m-d', strtotime((string) $announcement['published_at']))) ?></div>
+                            <div><?= esc($announcement['message']) ?></div>
+                        </div>
+                    <?php endforeach; ?>
+                    <?php if (empty($announcements)): ?>
+                        <div class="list-group-item text-muted">No active announcements.</div>
+                    <?php endif; ?>
+                </div>
+            </div>
+        </div>
     </div>
 </div>
 

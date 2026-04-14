@@ -126,10 +126,21 @@ $navGroups = [
                 </div>
                 <div class="admin-topbar-actions">
                     <?php if (! empty($queueSummary)): ?>
+                        <?php
+                            $pendingSubmissions = (int) ($queueSummary['pending_submissions'] ?? 0);
+                            $pendingCorrections = (int) ($queueSummary['pending_corrections'] ?? 0);
+                            $overdueRemittances = (int) ($queueSummary['overdue_remittances'] ?? 0);
+                        ?>
                         <div class="admin-queue-summary d-none d-lg-flex">
-                            <span class="admin-queue-chip admin-queue-chip-warning">Requests: <?= (int) ($queueSummary['pending_submissions'] ?? 0) ?></span>
-                            <span class="admin-queue-chip admin-queue-chip-alert">Corrections: <?= (int) ($queueSummary['pending_corrections'] ?? 0) ?></span>
-                            <span class="admin-queue-chip admin-queue-chip-neutral">Overdue: <?= (int) ($queueSummary['overdue_remittances'] ?? 0) ?></span>
+                            <?php if ($pendingSubmissions > 0): ?>
+                                <span class="admin-queue-chip admin-queue-chip-warning">Requests: <?= $pendingSubmissions ?></span>
+                            <?php endif; ?>
+                            <?php if ($pendingCorrections > 0): ?>
+                                <span class="admin-queue-chip admin-queue-chip-alert">Corrections: <?= $pendingCorrections ?></span>
+                            <?php endif; ?>
+                            <?php if ($overdueRemittances > 0): ?>
+                                <span class="admin-queue-chip admin-queue-chip-neutral">Overdue: <?= $overdueRemittances ?></span>
+                            <?php endif; ?>
                         </div>
                     <?php endif; ?>
                     <button type="button" class="btn admin-shell-toggle d-inline-flex d-lg-none" data-sidebar-toggle aria-label="Open sidebar">
