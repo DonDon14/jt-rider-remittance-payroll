@@ -175,6 +175,10 @@ class AuthController extends BaseController
             return redirect()->back()->withInput()->with('error', 'Account not found or inactive.');
         }
 
+        if (! $this->isSelfServiceForgotPasswordEnabled() && ($user['role'] ?? '') !== 'admin') {
+            return redirect()->back()->withInput()->with('error', 'Self-service reset is disabled. Contact admin for password reset.');
+        }
+
         if (($user['role'] ?? '') === 'rider') {
             $rider = $this->resolveRiderForUser($user);
             if (! $rider) {
@@ -326,5 +330,12 @@ class AuthController extends BaseController
         }
 
         return filter_var((string) $value, FILTER_VALIDATE_BOOL);
+    }
+
+    private function isSelfServiceForgotPasswordEnabled(): bool
+    {
+        $mode = strtolower(trim((string) env('auth.forgotPasswordMode', ENVIRONMENT === 'production' ? 'admin_only' : 'self_service')));
+
+        return $mode === 'self_service';
     }
 }
