@@ -103,6 +103,7 @@ $routes->group('api', static function ($routes) {
     $routes->post('rider/delivery-submissions', 'Api\RiderController::storeSubmission');
     $routes->post('rider/payroll/(:num)/confirm', 'Api\RiderController::confirmPayrollReceipt/$1');
     $routes->get('rider/payroll/(:num)/pdf', 'Api\RiderController::payrollPdf/$1');
+    $routes->get('rider/payrolls/(:num)/pdf', 'Api\RiderController::payrollPdf/$1');
 });
 
 

@@ -1,4 +1,8 @@
+import 'dart:io';
+
 import 'package:flutter/material.dart';
+import 'package:path_provider/path_provider.dart';
+import 'package:permission_handler/permission_handler.dart';
 
 import '../controllers/session_controller.dart';
 import '../services/api_client.dart';
@@ -193,6 +197,7 @@ class _RequestsTabState extends State<_RequestsTab> {
   final _successfulController = TextEditingController();
   final _expectedController = TextEditingController();
   final _notesController = TextEditingController();
+  final ValueNotifier<int> _failedPreview = ValueNotifier<int>(0);
 
   int? _selectedAccountId;
   bool _submitting = false;
@@ -203,16 +208,27 @@ class _RequestsTabState extends State<_RequestsTab> {
     _submissionsFuture = widget.apiClient.getAuthed('rider/submissions', widget.token, query: const {'page': '1', 'per_page': '20'});
     _accountsFuture = widget.apiClient.getAuthed('rider/remittance-accounts', widget.token);
     _dateController.text = _formatDate(DateTime.now());
+    _allocatedController.addListener(_recalculateFailedPreview);
+    _successfulController.addListener(_recalculateFailedPreview);
   }
 
   @override
   void dispose() {
+    _allocatedController.removeListener(_recalculateFailedPreview);
+    _successfulController.removeListener(_recalculateFailedPreview);
     _dateController.dispose();
     _allocatedController.dispose();
     _successfulController.dispose();
     _expectedController.dispose();
     _notesController.dispose();
+    _failedPreview.dispose();
     super.dispose();
+  }
+
+  void _recalculateFailedPreview() {
+    final allocated = int.tryParse(_allocatedController.text.trim()) ?? 0;
+    final successful = int.tryParse(_successfulController.text.trim()) ?? 0;
+    _failedPreview.value = (allocated - successful) < 0 ? 0 : (allocated - successful);
   }
 
   Future<void> _submitRequest() async {
@@ -326,6 +342,20 @@ class _RequestsTabState extends State<_RequestsTab> {
                     const SizedBox(height: 12),
                     TextField(controller: _successfulController, decoration: const InputDecoration(labelText: 'Successful Deliveries'), keyboardType: TextInputType.number),
                     const SizedBox(height: 12),
+                    ValueListenableBuilder<int>(
+                      valueListenable: _failedPreview,
+                      builder: (context, failed, _) => InputDecorator(
+                        decoration: const InputDecoration(
+                          labelText: 'Undelivered Parcels',
+                          helperText: 'Auto-calculated as allocated minus successful.',
+                        ),
+                        child: Text(
+                          '$failed',
+                          style: Theme.of(context).textTheme.bodyLarge,
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 12),
                     TextField(controller: _expectedController, decoration: const InputDecoration(labelText: 'Expected Remittance'), keyboardType: const TextInputType.numberWithOptions(decimal: true)),
                     const SizedBox(height: 12),
                     DropdownButtonFormField<int>(
@@ -377,6 +407,7 @@ class _PayrollTab extends StatefulWidget {
 
 class _PayrollTabState extends State<_PayrollTab> {
   late Future<Map<String, dynamic>> _future;
+  bool _downloading = false;
 
   @override
   void initState() {
@@ -396,6 +427,110 @@ class _PayrollTabState extends State<_PayrollTab> {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(error.message)));
     }
+  }
+
+  Future<void> _downloadPayslip(Map<String, dynamic> item) async {
+    final id = item['id'] as int?;
+    if (id == null) {
+      return;
+    }
+
+    setState(() => _downloading = true);
+    try {
+      final bytes = await widget.apiClient.downloadPayrollPdf(widget.token, id);
+      final startDate = (item['start_date'] ?? '').toString().replaceAll('/', '-');
+      final fileName = 'payslip-$id-$startDate.pdf';
+
+      Directory? targetDir;
+      if (Platform.isAndroid) {
+        final storageStatus = await Permission.storage.request();
+        if (!storageStatus.isGranted && !storageStatus.isLimited) {
+          await Permission.manageExternalStorage.request();
+        }
+
+        final candidates = <Directory>[
+          Directory('/storage/emulated/0/Documents'),
+          Directory('/storage/emulated/0/Download'),
+        ];
+
+        for (final dir in candidates) {
+          try {
+            if (!await dir.exists()) {
+              await dir.create(recursive: true);
+            }
+            targetDir = dir;
+            break;
+          } catch (_) {
+            continue;
+          }
+        }
+
+        targetDir ??= await getExternalStorageDirectory();
+      } else {
+        targetDir = await getApplicationDocumentsDirectory();
+      }
+
+      if (targetDir == null) {
+        throw ApiException('Unable to resolve a writable folder for payslip download.');
+      }
+
+      if (!await targetDir.exists()) {
+        await targetDir.create(recursive: true);
+      }
+
+      final file = File('${targetDir.path}/$fileName');
+      await file.writeAsBytes(bytes, flush: true);
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Payslip saved to ${file.path}')),
+      );
+    } on ApiException catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(error.message)));
+    } finally {
+      if (mounted) {
+        setState(() => _downloading = false);
+      }
+    }
+  }
+
+  Future<void> _viewPayslip(Map<String, dynamic> item) async {
+    await showDialog<void>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Payslip Details'),
+        content: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text('Coverage: ${item['start_date']} to ${item['end_date']}'),
+              Text('Gross earnings: ${_currency(item['gross_earnings'])}'),
+              Text('Net pay: ${_currency(item['net_pay'])}'),
+              Text('Status: ${item['payroll_status'] ?? ''}'),
+              if ((item['payout_method'] ?? '').toString().isNotEmpty)
+                Text('Payout method: ${item['payout_method']}'),
+              if ((item['payout_reference'] ?? '').toString().isNotEmpty)
+                Text('Reference: ${item['payout_reference']}'),
+              if ((item['released_at'] ?? '').toString().isNotEmpty)
+                Text('Released: ${item['released_at']}'),
+              if ((item['received_at'] ?? '').toString().isNotEmpty)
+                Text('Received: ${item['received_at']}'),
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(),
+            child: const Text('Close'),
+          ),
+          FilledButton(
+            onPressed: _downloading ? null : () async => _downloadPayslip(item),
+            child: Text(_downloading ? 'Downloading...' : 'Download PDF'),
+          ),
+        ],
+      ),
+    );
   }
 
   @override
@@ -433,6 +568,21 @@ class _PayrollTabState extends State<_PayrollTab> {
                     Text('Net Pay: ${_currency(item['net_pay'])}'),
                     Text('Status: $status'),
                     if ((item['payout_method'] ?? '').toString().isNotEmpty) Text('Method: ${item['payout_method']}'),
+                    const SizedBox(height: 12),
+                    Wrap(
+                      spacing: 10,
+                      runSpacing: 10,
+                      children: [
+                        OutlinedButton(
+                          onPressed: () => _viewPayslip(item as Map<String, dynamic>),
+                          child: const Text('View Payslip'),
+                        ),
+                        FilledButton.tonal(
+                          onPressed: _downloading ? null : () => _downloadPayslip(item as Map<String, dynamic>),
+                          child: Text(_downloading ? 'Downloading...' : 'Download PDF'),
+                        ),
+                      ],
+                    ),
                     if (status == 'RELEASED') ...[
                       const SizedBox(height: 12),
                       FilledButton(onPressed: () => _confirmReceipt(item['id'] as int), child: const Text('Confirm Received')),

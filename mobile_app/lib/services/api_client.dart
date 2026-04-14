@@ -22,7 +22,7 @@ class ApiClient {
   final http.Client _httpClient;
 
   Uri _uri(String path, [Map<String, String>? query]) {
-    final base = Uri.parse(AppConfig.apiBaseUrl);
+    final base = Uri.parse(AppConfig.resolvedApiBaseUrl);
     final basePath = base.path.endsWith('/') ? base.path.substring(0, base.path.length - 1) : base.path;
     final normalizedPath = '$basePath/$path';
     return base.replace(path: normalizedPath, queryParameters: query);
@@ -43,6 +43,8 @@ class ApiClient {
       throw ApiException('The server connection failed.');
     } on FormatException {
       throw ApiException('The server returned an invalid response.');
+    } on StateError catch (error) {
+      throw ApiException(error.message.toString());
     }
   }
 
@@ -64,6 +66,8 @@ class ApiClient {
       throw ApiException('The server connection failed.');
     } on FormatException {
       throw ApiException('The server returned an invalid response.');
+    } on StateError catch (error) {
+      throw ApiException(error.message.toString());
     }
   }
 
@@ -86,6 +90,8 @@ class ApiClient {
       throw ApiException('The server connection failed.');
     } on FormatException {
       throw ApiException('The server returned an invalid response.');
+    } on StateError catch (error) {
+      throw ApiException(error.message.toString());
     }
   }
 
@@ -101,11 +107,73 @@ class ApiClient {
     };
 
     final json = await postPublic('login', body);
-    return RiderSession.fromLoginResponse(json);
+    final session = RiderSession.fromLoginResponse(json);
+    if (session.forcePasswordChange) {
+      throw ApiException(
+        'Password change is required for this account. Use Forgot Password or the web Change Password page first.',
+      );
+    }
+
+    return session;
+  }
+
+  Future<String> forgotPassword({
+    required String username,
+    required String riderCode,
+    required String contactNumber,
+  }) async {
+    final json = await postPublic('forgot-password', <String, dynamic>{
+      'username': username,
+      'rider_code': riderCode,
+      'contact_number': contactNumber,
+    });
+
+    final data = (json['data'] as Map<String, dynamic>? ?? <String, dynamic>{});
+    return (data['temporary_password'] ?? '').toString();
   }
 
   Future<void> logout(String token) async {
     await postAuthed('logout', token);
+  }
+
+  Future<List<int>> downloadPayrollPdf(String token, int payrollId) async {
+    try {
+      http.Response response = await _httpClient.get(
+        _uri('rider/payroll/$payrollId/pdf'),
+        headers: _headers(token),
+      );
+
+      // Backward compatibility for older/newer backend route naming.
+      if (response.statusCode == 404) {
+        response = await _httpClient.get(
+          _uri('rider/payrolls/$payrollId/pdf'),
+          headers: _headers(token),
+        );
+      }
+
+      if (response.statusCode >= 400) {
+        final body = response.body.trim();
+        if (body.isNotEmpty) {
+          try {
+            final json = jsonDecode(body) as Map<String, dynamic>;
+            throw ApiException((json['message'] ?? 'Unable to download payslip.').toString(), statusCode: response.statusCode);
+          } catch (_) {
+            throw ApiException('Unable to download payslip (HTTP ${response.statusCode}).', statusCode: response.statusCode);
+          }
+        }
+        throw ApiException('Unable to download payslip (HTTP ${response.statusCode}).', statusCode: response.statusCode);
+      }
+
+      return response.bodyBytes;
+    } on SocketException {
+      throw ApiException('Unable to reach the server. Check your network connection and backend URL.');
+    } on HttpException {
+      throw ApiException('The server connection failed.');
+    } on FormatException {
+      throw ApiException('The server returned an invalid response.');
+    } on StateError catch (error) {
+      throw ApiException(error.message.toString());
+    }
   }
 
   Map<String, String> _headers(String token) {
