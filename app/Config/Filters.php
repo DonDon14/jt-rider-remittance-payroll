@@ -52,5 +52,9 @@ class Filters extends BaseFilters
 
     public array $methods = [];
 
-    public array $filters = [];
+    public array $filters = [
+        'cors' => [
+            'before' => ['api/*'],
+        ],
+    ];
 }

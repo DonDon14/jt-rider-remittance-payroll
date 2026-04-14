@@ -34,7 +34,14 @@ class Cors extends BaseConfig
          *   - ['http://localhost:8080']
          *   - ['https://www.example.com']
          */
-        'allowedOrigins' => [],
+        'allowedOrigins' => [
+            'http://localhost',
+            'https://localhost',
+            'http://127.0.0.1',
+            'https://127.0.0.1',
+            'http://187.127.105.169',
+            'https://187.127.105.169',
+        ],
 
         /**
          * Origin regex patterns for the `Access-Control-Allow-Origin` header.
@@ -47,7 +54,12 @@ class Cors extends BaseConfig
          * E.g.:
          *   - ['https://\w+\.example\.com']
          */
-        'allowedOriginsPatterns' => [],
+        'allowedOriginsPatterns' => [
+            'http://localhost:\d+',
+            'https://localhost:\d+',
+            'http://127\.0\.0\.1:\d+',
+            'https://127\.0\.0\.1:\d+',
+        ],
 
         /**
          * Weather to send the `Access-Control-Allow-Credentials` header.
@@ -68,7 +80,13 @@ class Cors extends BaseConfig
          *
          * @see https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/Access-Control-Allow-Headers
          */
-        'allowedHeaders' => [],
+        'allowedHeaders' => [
+            'Authorization',
+            'Content-Type',
+            'X-Requested-With',
+            'Accept',
+            'Origin',
+        ],
 
         /**
          * Set headers to expose.
@@ -79,7 +97,10 @@ class Cors extends BaseConfig
          *
          * @see https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/Access-Control-Expose-Headers
          */
-        'exposedHeaders' => [],
+        'exposedHeaders' => [
+            'Content-Disposition',
+            'Content-Type',
+        ],
 
         /**
          * Set methods to allow.
@@ -93,7 +114,14 @@ class Cors extends BaseConfig
          *
          * @see https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/Access-Control-Allow-Methods
          */
-        'allowedMethods' => [],
+        'allowedMethods' => [
+            'GET',
+            'POST',
+            'PUT',
+            'PATCH',
+            'DELETE',
+            'OPTIONS',
+        ],
 
         /**
          * Set how many seconds the results of a preflight request can be cached.
